@@ -531,9 +531,13 @@ const SchemaPanel = ({ schema, setSchema, selectedProject }) => {
   );
 };
 
-function DataPage({ projects, selectedProjectId, setSelectedProjectId, selectedProject, importForm, setImportForm, createForm, setCreateForm, refreshProjects, setMessage }) {
-  const [files, setFiles] = useState([]);
+function ProjectCenter({ projects, setSelectedProjectId, setPage, importForm, setImportForm, createForm, setCreateForm, refreshProjects, setMessage }) {
   const [actionStatus, setActionStatus] = useState("");
+
+  function enterProject(projectId) {
+    setSelectedProjectId(projectId);
+    setPage("overview");
+  }
 
   async function doCreate() {
     try {
@@ -544,7 +548,8 @@ function DataPage({ projects, selectedProjectId, setSelectedProjectId, selectedP
         project_schema: schemaFromForm(createForm),
       });
       await refreshProjects(project.id);
-      const text = `项目“${project.name}”已创建并选中，可以上传图片开始标注。`;
+      enterProject(project.id);
+      const text = `项目“${project.name}”已创建，已进入项目工作区。`;
       setActionStatus(text);
       setMessage(text);
     } catch (err) {
@@ -559,7 +564,8 @@ function DataPage({ projects, selectedProjectId, setSelectedProjectId, selectedP
       setActionStatus("正在导入项目...");
       const project = await api.importProject(importForm);
       await refreshProjects(project.id);
-      const text = `项目“${project.name}”已导入并选中。`;
+      enterProject(project.id);
+      const text = `项目“${project.name}”已导入，已进入项目工作区。`;
       setActionStatus(text);
       setMessage(text);
     } catch (err) {
@@ -574,6 +580,7 @@ function DataPage({ projects, selectedProjectId, setSelectedProjectId, selectedP
       setActionStatus("正在导入当前 Pose 数据...");
       const project = await api.importCurrent();
       await refreshProjects(project.id);
+      enterProject(project.id);
       const text = `当前 Pose 数据已导入为“${project.name}”。`;
       setActionStatus(text);
       setMessage(text);
@@ -583,6 +590,121 @@ function DataPage({ projects, selectedProjectId, setSelectedProjectId, selectedP
       setMessage(text);
     }
   }
+
+  return (
+    <div className="project-center">
+      <section className="center-hero">
+        <div>
+          <span className="eyebrow">Project Center</span>
+          <h2>选择一个视觉项目开始工作</h2>
+          <p>进入项目后再上传图片、编辑标签、标注、划分数据集和训练模型。</p>
+        </div>
+        <div className="hero-metrics">
+          <span><b>{projects.length}</b>项目</span>
+          <span><b>{projects.reduce((sum, p) => sum + (p.images?.length || 0), 0)}</b>图片</span>
+        </div>
+      </section>
+
+      {actionStatus && <p className={`action-status ${actionStatus.includes("失败") ? "error" : ""}`}>{actionStatus}</p>}
+
+      <section className="project-grid">
+        {projects.map((project) => {
+          const annotated = (project.images || []).filter((img) => img.annotated).length;
+          return (
+            <button className="project-card" key={project.id} onClick={() => enterProject(project.id)}>
+              <div>
+                <strong>{project.name}</strong>
+                <span>{project.task_type || project.schema?.task_type}</span>
+              </div>
+              <div className="project-card-stats">
+                <span>{project.images?.length || 0} 图</span>
+                <span>{annotated} 已标</span>
+              </div>
+            </button>
+          );
+        })}
+        {projects.length === 0 && <div className="empty-state"><FolderInput size={32} /><strong>还没有项目</strong><span>创建或导入一个项目后再进入工作区。</span></div>}
+      </section>
+
+      <div className="page-grid two-col">
+        <section className="panel">
+          <h2><Plus size={16} />创建项目</h2>
+          <div className="stack">
+            <input value={createForm.name} onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })} placeholder="项目名" />
+            <select value={createForm.task_type} onChange={(e) => setCreateForm({ ...createForm, task_type: e.target.value })}>
+              <option value="pose">Pose</option>
+              <option value="segment">Segment</option>
+            </select>
+            <label>标签类别，逗号分隔</label>
+            <input value={createForm.classesText} onChange={(e) => setCreateForm({ ...createForm, classesText: e.target.value })} placeholder="stem, root" />
+            {createForm.task_type === "pose" && (
+              <>
+                <label>关键点，按顺序逗号分隔</label>
+                <textarea value={createForm.keypointsText} onChange={(e) => setCreateForm({ ...createForm, keypointsText: e.target.value })} />
+                <label>骨架连线，例如 0-1, 1-2</label>
+                <input value={createForm.skeletonText} onChange={(e) => setCreateForm({ ...createForm, skeletonText: e.target.value })} />
+                <label>翻转映射，例如 2, 1, 0</label>
+                <input value={createForm.flipText} onChange={(e) => setCreateForm({ ...createForm, flipText: e.target.value })} />
+              </>
+            )}
+          </div>
+          <button className="primary" onClick={doCreate}><Plus size={15} />创建并进入</button>
+        </section>
+        <section className="panel">
+          <h2><FolderInput size={16} />项目导入</h2>
+          <div className="stack">
+            <input value={importForm.name} onChange={(e) => setImportForm({ ...importForm, name: e.target.value })} placeholder="项目名" />
+            <select value={importForm.task_type} onChange={(e) => setImportForm({ ...importForm, task_type: e.target.value })}>
+              <option value="pose">Pose</option>
+              <option value="segment">Segment</option>
+            </select>
+            <input value={importForm.image_dir} onChange={(e) => setImportForm({ ...importForm, image_dir: e.target.value })} placeholder="图片目录，例如 images" />
+            <input value={importForm.label_dir || ""} onChange={(e) => setImportForm({ ...importForm, label_dir: e.target.value })} placeholder="标签目录，例如 labels" />
+            <input value={importForm.data_yaml || ""} onChange={(e) => setImportForm({ ...importForm, data_yaml: e.target.value })} placeholder="data.yaml，例如 yolo-pose/data.yaml" />
+          </div>
+          <div className="button-row">
+            <button className="primary" onClick={doImport}><FolderInput size={15} />导入并进入</button>
+            <button onClick={doImportCurrent}>导入当前 Pose 数据</button>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function ProjectOverview({ project, validation, setPage }) {
+  const images = project?.images || [];
+  const annotated = images.filter((img) => img.annotated).length;
+  const summary = validation?.summary || {};
+  if (!project) return null;
+  return (
+    <div className="overview-grid">
+      <section className="panel overview-primary">
+        <h2>{project.name}</h2>
+        <p>当前工作区只作用于这个项目。上传、标注、划分和训练都会写入该项目目录。</p>
+        <div className="metric-row">
+          <span><b>{images.length}</b>图片</span>
+          <span><b>{annotated}</b>已标注</span>
+          <span><b>{summary.invalid_images || 0}</b>错误</span>
+          <span><b>{validation?.status || "未检查"}</b>预检</span>
+        </div>
+      </section>
+      <section className="panel">
+        <h2>下一步</h2>
+        <div className="quick-actions">
+          <button onClick={() => setPage("data")}><Upload size={15} />上传图片</button>
+          <button onClick={() => setPage("labels")}><Settings size={15} />标签与骨架</button>
+          <button className="primary" onClick={() => setPage("annotate")}><ImageIcon size={15} />开始标注</button>
+          <button onClick={() => setPage("train")}><Brain size={15} />训练与导出</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ProjectDataPage({ selectedProject, refreshProjects, setMessage }) {
+  const [files, setFiles] = useState([]);
+  const [actionStatus, setActionStatus] = useState("");
 
   async function uploadFiles() {
     if (!selectedProject || files.length === 0) return;
@@ -596,56 +718,19 @@ function DataPage({ projects, selectedProjectId, setSelectedProjectId, selectedP
   return (
     <div className="page-grid two-col">
       <section className="panel">
-        <h2><Plus size={16} />创建项目</h2>
-        {actionStatus && <p className={`action-status ${actionStatus.includes("失败") ? "error" : ""}`}>{actionStatus}</p>}
-        <div className="stack">
-          <input value={createForm.name} onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })} placeholder="项目名" />
-          <select value={createForm.task_type} onChange={(e) => setCreateForm({ ...createForm, task_type: e.target.value })}>
-            <option value="pose">Pose</option>
-            <option value="segment">Segment</option>
-          </select>
-          <label>标签类别，逗号分隔</label>
-          <input value={createForm.classesText} onChange={(e) => setCreateForm({ ...createForm, classesText: e.target.value })} placeholder="stem, root" />
-          {createForm.task_type === "pose" && (
-            <>
-              <label>关键点，按顺序逗号分隔</label>
-              <textarea value={createForm.keypointsText} onChange={(e) => setCreateForm({ ...createForm, keypointsText: e.target.value })} />
-              <label>骨架连线，例如 0-1, 1-2</label>
-              <input value={createForm.skeletonText} onChange={(e) => setCreateForm({ ...createForm, skeletonText: e.target.value })} />
-              <label>翻转映射，例如 2, 1, 0</label>
-              <input value={createForm.flipText} onChange={(e) => setCreateForm({ ...createForm, flipText: e.target.value })} />
-            </>
-          )}
-        </div>
-        <button className="primary" onClick={doCreate}><Plus size={15} />创建项目</button>
-      </section>
-      <section className="panel">
-        <h2><FolderInput size={16} />项目导入</h2>
-        <div className="stack">
-          <select value={selectedProjectId} onChange={(e) => setSelectedProjectId(e.target.value)}>
-            <option value="">选择项目</option>
-            {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-          <input value={importForm.name} onChange={(e) => setImportForm({ ...importForm, name: e.target.value })} placeholder="项目名" />
-          <select value={importForm.task_type} onChange={(e) => setImportForm({ ...importForm, task_type: e.target.value })}>
-            <option value="pose">Pose</option>
-            <option value="segment">Segment</option>
-          </select>
-          <input value={importForm.image_dir} onChange={(e) => setImportForm({ ...importForm, image_dir: e.target.value })} placeholder="图片目录，例如 images" />
-          <input value={importForm.label_dir || ""} onChange={(e) => setImportForm({ ...importForm, label_dir: e.target.value })} placeholder="标签目录，例如 labels" />
-          <input value={importForm.data_yaml || ""} onChange={(e) => setImportForm({ ...importForm, data_yaml: e.target.value })} placeholder="data.yaml，例如 yolo-pose/data.yaml" />
-        </div>
-        <div className="button-row">
-          <button className="primary" onClick={doImport}><FolderInput size={15} />导入项目</button>
-          <button onClick={doImportCurrent}>导入当前 Pose 数据</button>
-        </div>
-      </section>
-      <section className="panel">
         <h2><Upload size={16} />上传图片</h2>
+        {actionStatus && <p className={`action-status ${actionStatus.includes("失败") ? "error" : ""}`}>{actionStatus}</p>}
         <p>上传的图片会保存到当前项目目录，不会覆盖你的原始数据。</p>
         <input type="file" multiple accept=".bmp,.jpg,.jpeg,.png,.webp,.tif,.tiff,image/*" onChange={(e) => setFiles([...e.target.files])} />
         <div className="upload-list">{files.map((file) => <span key={file.name}>{file.name}</span>)}</div>
         <button className="primary" disabled={!selectedProject || files.length === 0} onClick={uploadFiles}><Upload size={15} />上传到当前项目</button>
+      </section>
+      <section className="panel">
+        <h2><ImageIcon size={16} />项目图片</h2>
+        <div className="compact-list">
+          {(selectedProject?.images || []).slice(0, 80).map((img) => <span key={img.name}>{img.name}</span>)}
+          {(selectedProject?.images || []).length === 0 && <p>这个项目还没有图片。</p>}
+        </div>
       </section>
     </div>
   );
@@ -894,7 +979,7 @@ function TrainingPage({ project, schema, validation, refreshValidation, setMessa
 }
 
 export default function App() {
-  const [page, setPage] = useState("data");
+  const [page, setPage] = useState("projects");
   const [navOpen, setNavOpen] = useState(true);
   const [projects, setProjects] = useState([]);
   const [selectedProjectId, setSelectedProjectId] = useState("");
@@ -922,9 +1007,9 @@ export default function App() {
     try {
       const loaded = await api.projects();
       setProjects(loaded);
-      const nextId = preferredId || loaded[0]?.id || "";
+      const nextId = preferredId || "";
       if (nextId) setSelectedProjectId(nextId);
-      setMessage(loaded.length ? "" : "还没有项目。请在“数据”页面导入项目。");
+      setMessage(loaded.length ? "" : "还没有项目。请在项目中心创建或导入项目。");
     } catch (err) {
       setMessage(`后端未连接：${err.message}`);
     }
@@ -1020,6 +1105,16 @@ export default function App() {
     });
   }
 
+  function leaveProject() {
+    setSelectedProjectId("");
+    setSelectedImageName("");
+    setImages([]);
+    setSchema(null);
+    setValidation(null);
+    setAnnotation({ version: 1, instances: [] });
+    setPage("projects");
+  }
+
   useEffect(() => {
     if (saveState !== "dirty" || !selectedProject || !selectedImage) return;
     const timer = setTimeout(() => {
@@ -1041,10 +1136,10 @@ export default function App() {
       } else if ((evt.ctrlKey || evt.metaKey) && evt.key.toLowerCase() === "y") {
         evt.preventDefault();
         redoAnnotation();
-      } else if (evt.key === "ArrowRight" && page === "annotate") {
+      } else if (evt.key === "ArrowRight" && page === "annotate" && selectedProjectId) {
         const idx = images.findIndex((img) => img.name === selectedImageName);
         if (idx >= 0 && images[idx + 1]) setSelectedImageName(images[idx + 1].name);
-      } else if (evt.key === "ArrowLeft" && page === "annotate") {
+      } else if (evt.key === "ArrowLeft" && page === "annotate" && selectedProjectId) {
         const idx = images.findIndex((img) => img.name === selectedImageName);
         if (idx > 0) setSelectedImageName(images[idx - 1].name);
       } else if (evt.key.toLowerCase() === "b" && schema?.task_type === "pose") {
@@ -1064,90 +1159,91 @@ export default function App() {
       <header>
         <div>
           <h1>Vision Studio</h1>
-          <p>本地图像标注、数据划分、YOLO 训练与模型导出</p>
+          <p>{selectedProject ? `当前项目：${selectedProject.name}` : "项目优先的本地图像标注、训练与导出工作台"}</p>
         </div>
         <div className="api-pill">{apiBase}</div>
       </header>
-      <div className={`shell ${navOpen ? "nav-open" : "nav-closed"}`}>
-        <aside className="page-sidebar">
-          <label className="nav-toggle">
-            <input type="checkbox" checked={navOpen} onChange={(e) => setNavOpen(e.target.checked)} />
-            <span>{navOpen ? "收起导航" : "展开"}</span>
-          </label>
-          <nav className="page-nav" aria-label="页面导航">
+      {!selectedProject ? (
+        <main className="project-shell">
+          <ProjectCenter
+            projects={projects}
+            setSelectedProjectId={setSelectedProjectId}
+            setPage={setPage}
+            importForm={importForm}
+            setImportForm={setImportForm}
+            createForm={createForm}
+            setCreateForm={setCreateForm}
+            refreshProjects={refreshProjects}
+            setMessage={setMessage}
+          />
+          {message && <p className="global-message">{message}</p>}
+        </main>
+      ) : (
+        <div className="workspace-shell">
+          <section className="project-header">
+            <button onClick={leaveProject}>返回项目列表</button>
+            <div>
+              <span className="eyebrow">Project Workspace</span>
+              <h2>{selectedProject.name}</h2>
+            </div>
+            <div className="project-meta">
+              <span>{selectedProject.task_type || schema?.task_type}</span>
+              <span>{images.length} 图片</span>
+              <span>{images.filter((img) => img.annotated).length} 已标</span>
+              <span>{validation?.status || "未检查"}</span>
+            </div>
+          </section>
+          <nav className="workspace-tabs" aria-label="项目子页面">
             {[
-              ["data", "数据", "D"],
-              ["annotate", "标注", "A"],
-              ["split", "划分", "S"],
-              ["train", "训练", "T"],
-            ].map(([id, label, short]) => (
-              <div
-                key={id}
-                className={`nav-item ${page === id ? "selected" : ""}`}
-                role="option"
-                aria-selected={page === id}
-                tabIndex={0}
-                onClick={() => setPage(id)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") setPage(id);
-                }}
-                title={label}
-              >
-                <span className="nav-mark">{short}</span>
-                {navOpen && <span className="nav-label">{label}</span>}
-              </div>
+              ["overview", "概览"],
+              ["data", "数据"],
+              ["labels", "标签与骨架"],
+              ["annotate", "标注"],
+              ["split", "划分"],
+              ["train", "训练导出"],
+            ].map(([id, label]) => (
+              <button key={id} className={page === id ? "selected" : ""} onClick={() => setPage(id)}>{label}</button>
             ))}
           </nav>
-        </aside>
-        <main className="page-main">
-          {page === "data" && (
-            <DataPage
-              projects={projects}
-              selectedProjectId={selectedProjectId}
-              setSelectedProjectId={setSelectedProjectId}
-              selectedProject={selectedProject}
-              importForm={importForm}
-              setImportForm={setImportForm}
-              createForm={createForm}
-              setCreateForm={setCreateForm}
-              refreshProjects={refreshProjects}
-              setMessage={setMessage}
-            />
-          )}
-          {page === "annotate" && (
-            <AnnotatePage
-              images={images}
-              selectedImageName={selectedImageName}
-              setSelectedImageName={setSelectedImageName}
-              schema={schema}
-              selectedProject={selectedProject}
-              selectedImage={selectedImage}
-              annotation={annotation}
-              setAnnotation={updateAnnotation}
-              activeClass={activeClass}
-              setActiveClass={setActiveClass}
-              activeKeypoint={activeKeypoint}
-              setActiveKeypoint={setActiveKeypoint}
-              tool={tool}
-              setTool={setTool}
-              saveAnnotation={saveAnnotation}
-              undoAnnotation={undoAnnotation}
-              redoAnnotation={redoAnnotation}
-              canUndo={historyPast.length > 0}
-              canRedo={historyFuture.length > 0}
-              saveState={saveState}
-              validation={validation}
-              removeSelectedInstance={removeSelectedInstance}
-              zoom={zoom}
-              setZoom={setZoom}
-              message={message}
-            />
-          )}
-          {page === "split" && <SplitPage project={selectedProject} schema={schema} setSchema={setSchema} setMessage={setMessage} />}
-          {page === "train" && <TrainingPage project={selectedProject} schema={schema} validation={validation} refreshValidation={refreshValidation} setMessage={setMessage} />}
-          {message && page !== "annotate" && <p className="global-message">{message}</p>}
-        </main>
-      </div>
+          <main className="page-main workspace-main">
+            {page === "overview" && <ProjectOverview project={selectedProject} validation={validation} setPage={setPage} />}
+            {page === "data" && <ProjectDataPage selectedProject={selectedProject} refreshProjects={refreshProjects} setMessage={setMessage} />}
+            {page === "labels" && schema && <SchemaPanel schema={schema} setSchema={setSchema} selectedProject={selectedProject} />}
+            {page === "annotate" && (
+              <AnnotatePage
+                images={images}
+                selectedImageName={selectedImageName}
+                setSelectedImageName={setSelectedImageName}
+                schema={schema}
+                selectedProject={selectedProject}
+                selectedImage={selectedImage}
+                annotation={annotation}
+                setAnnotation={updateAnnotation}
+                activeClass={activeClass}
+                setActiveClass={setActiveClass}
+                activeKeypoint={activeKeypoint}
+                setActiveKeypoint={setActiveKeypoint}
+                tool={tool}
+                setTool={setTool}
+                saveAnnotation={saveAnnotation}
+                undoAnnotation={undoAnnotation}
+                redoAnnotation={redoAnnotation}
+                canUndo={historyPast.length > 0}
+                canRedo={historyFuture.length > 0}
+                saveState={saveState}
+                validation={validation}
+                removeSelectedInstance={removeSelectedInstance}
+                zoom={zoom}
+                setZoom={setZoom}
+                message={message}
+              />
+            )}
+            {page === "split" && <SplitPage project={selectedProject} schema={schema} setSchema={setSchema} setMessage={setMessage} />}
+            {page === "train" && <TrainingPage project={selectedProject} schema={schema} validation={validation} refreshValidation={refreshValidation} setMessage={setMessage} />}
+            {message && page !== "annotate" && <p className="global-message">{message}</p>}
+          </main>
+        </div>
+      )}
     </div>
   );
 }

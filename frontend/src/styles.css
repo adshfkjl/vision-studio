@@ -1,8 +1,8 @@
 :root {
   color-scheme: light;
   font-family: Inter, "Segoe UI", system-ui, sans-serif;
-  background: #f4f7f6;
-  color: #17211f;
+  background: #f5f7f8;
+  color: #18211f;
 }
 
 * {
@@ -30,9 +30,9 @@ textarea {
 }
 
 button {
-  border: 1px solid #cdd8d4;
+  border: 1px solid #cbd5d1;
   background: #ffffff;
-  color: #17211f;
+  color: #18211f;
   border-radius: 6px;
   min-height: 34px;
   padding: 0 10px;
@@ -45,13 +45,13 @@ button {
 
 button:hover,
 button.active {
-  border-color: #0f766e;
-  color: #0f766e;
+  border-color: #126b61;
+  color: #126b61;
 }
 
 button.primary {
-  border-color: #0f766e;
-  background: #0f766e;
+  border-color: #126b61;
+  background: #126b61;
   color: #ffffff;
 }
 
@@ -73,12 +73,12 @@ textarea {
 }
 
 header {
-  height: 70px;
+  height: 68px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 20px;
-  border-bottom: 1px solid #dbe4e1;
+  padding: 0 24px;
+  border-bottom: 1px solid #d8e0dd;
   background: #ffffff;
 }
 
@@ -107,6 +107,181 @@ p {
   display: block;
   padding: 12px;
   overflow: hidden;
+}
+
+.project-shell,
+.workspace-shell {
+  height: calc(100vh - 68px);
+  overflow: auto;
+}
+
+.project-shell {
+  padding: 18px;
+}
+
+.project-center {
+  display: grid;
+  gap: 14px;
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.center-hero,
+.project-header {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #d8e0dd;
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+}
+
+.center-hero h2,
+.project-header h2 {
+  display: block;
+  font-size: 22px;
+  margin: 2px 0 4px;
+}
+
+.eyebrow {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.hero-metrics,
+.project-meta,
+.metric-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hero-metrics span,
+.project-meta span,
+.metric-row span {
+  background: #edf3f1;
+  border: 1px solid #d8e0dd;
+  border-radius: 8px;
+  color: #33423e;
+  min-width: 92px;
+  padding: 8px 10px;
+}
+
+.hero-metrics b,
+.metric-row b {
+  display: block;
+  font-size: 18px;
+}
+
+.project-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+
+.project-card {
+  align-items: stretch;
+  border-radius: 8px;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 116px;
+  padding: 14px;
+  text-align: left;
+}
+
+.project-card strong {
+  display: block;
+  font-size: 16px;
+}
+
+.project-card span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.project-card-stats {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.workspace-shell {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 10px;
+  padding: 12px;
+}
+
+.project-header {
+  flex-wrap: wrap;
+}
+
+.project-header > button {
+  flex: 0 0 auto;
+}
+
+.workspace-tabs {
+  background: #ffffff;
+  border: 1px solid #d8e0dd;
+  border-radius: 8px;
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 6px;
+}
+
+.workspace-tabs button {
+  border-color: transparent;
+  min-width: 82px;
+}
+
+.workspace-tabs button.selected {
+  background: #e8f3ef;
+  border-color: #9fc9c0;
+  color: #126b61;
+}
+
+.workspace-main {
+  min-height: 0;
+  padding: 0;
+}
+
+.overview-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1.4fr) minmax(300px, 0.8fr);
+  height: 100%;
+  overflow: auto;
+}
+
+.overview-primary h2 {
+  font-size: 24px;
+}
+
+.quick-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.compact-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 420px;
+  overflow: auto;
+}
+
+.compact-list span {
+  border: 1px solid #d8e0dd;
+  border-radius: 6px;
+  color: #45534f;
+  font-size: 12px;
+  padding: 4px 6px;
 }
 
 .shell {
