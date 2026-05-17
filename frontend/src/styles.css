@@ -746,6 +746,28 @@ pre {
   color: #1d4ed8;
 }
 
+.keypoint-current {
+  align-items: center;
+  border: 1px solid #d8e0dd;
+  border-radius: 999px;
+  color: #33423e;
+  display: inline-flex;
+  font-size: 12px;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+
+.keypoint-current i {
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px #cbd5d1;
+  display: inline-block;
+  height: 12px;
+  width: 12px;
+}
+
 .redo-icon {
   transform: scaleX(-1);
 }

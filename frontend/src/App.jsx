@@ -102,7 +102,21 @@ function statusLabel(status) {
   return { error: "错误", warning: "警告", annotated: "已标", empty: "未标" }[status] || status;
 }
 
-function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, activeClass, tool, activeKeypoint, zoom }) {
+const KEYPOINT_COLORS = ["#e11d48", "#2563eb", "#16a34a", "#d97706", "#7c3aed", "#0891b2", "#db2777", "#65a30d", "#ea580c", "#4f46e5"];
+
+function keypointColor(schema, name) {
+  const index = Math.max(0, schema?.keypoints?.indexOf(name) ?? 0);
+  return KEYPOINT_COLORS[index % KEYPOINT_COLORS.length];
+}
+
+function nextKeypoint(schema, current) {
+  const keypoints = schema?.keypoints || [];
+  if (!keypoints.length) return "";
+  const index = keypoints.indexOf(current);
+  return keypoints[(index + 1) % keypoints.length] || keypoints[0];
+}
+
+function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, activeClass, tool, activeKeypoint, setActiveKeypoint, zoom }) {
   const svgRef = useRef(null);
   const [draft, setDraft] = useState([]);
   const [draftBox, setDraftBox] = useState(null);
@@ -197,6 +211,7 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
           });
           setAnnotation({ ...annotation, instances });
           setSelected({ type: "keypoint", instanceIndex: targetIndex, key: activeKeypoint });
+          setActiveKeypoint(nextKeypoint(schema, activeKeypoint));
         }
       }
       return;
@@ -287,6 +302,7 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
         });
         setAnnotation({ ...annotation, instances });
         setSelected({ type: "keypoint", instanceIndex, key: activeKeypoint });
+        setActiveKeypoint(nextKeypoint(schema, activeKeypoint));
       }
       return;
     }
@@ -435,22 +451,23 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
                   const pa = kptMap[schema.keypoints[a]];
                   const pb = kptMap[schema.keypoints[b]];
                   if (!pa || !pb || pa.v === 0 || pb.v === 0) return null;
-                  return <line key={idx} x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y} stroke={color} strokeWidth="0.001" />;
+                  return <line key={idx} x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y} stroke={color} strokeOpacity="0.55" strokeWidth="0.001" />;
                 })}
                 {schema.keypoints.map((name) => {
                   const p = kptMap[name] || { x: 0, y: 0, v: 0 };
                   if (!p.v) return null;
                   const selectedPoint = isSelected("keypoint", instanceIndex, name);
+                  const kpColor = keypointColor(schema, name);
                   return (
                     <g key={name}>
-                      {selectedPoint && <circle cx={p.x} cy={p.y} r="0.006" fill="none" stroke="#f59e0b" strokeWidth="0.001" />}
+                      {selectedPoint && <circle cx={p.x} cy={p.y} r="0.008" fill="none" stroke="#111827" strokeWidth="0.0015" />}
                       <circle
                         cx={p.x}
                         cy={p.y}
-                        r="0.004"
-                        fill="#ffffff"
-                        stroke={selectedPoint ? "#f59e0b" : color}
-                        strokeWidth="0.001"
+                        r="0.005"
+                        fill={kpColor}
+                        stroke="#ffffff"
+                        strokeWidth="0.0015"
                         onPointerDown={(evt) => moveKeypoint(instanceIndex, name, evt)}
                         onContextMenu={(evt) => handleContextMenu({ type: "keypoint", instanceIndex, key: name }, evt)}
                       />
@@ -811,6 +828,7 @@ function AnnotatePage(props) {
               <select value={activeKeypoint} onChange={(e) => setActiveKeypoint(e.target.value)}>
                 {(schema?.keypoints || []).map((kp) => <option key={kp} value={kp}>{kp}</option>)}
               </select>
+              <span className="keypoint-current"><i style={{ background: keypointColor(schema, activeKeypoint) }} />当前：{activeKeypoint || "未定义"}</span>
             </>
           )}
           <button onClick={undoAnnotation} disabled={!canUndo}><Undo2 size={15} />撤销</button>
@@ -826,7 +844,7 @@ function AnnotatePage(props) {
           <span className={`save-state ${saveState}`}>{saveState === "dirty" ? "未保存" : saveState === "saving" ? "保存中" : "已保存"}</span>
         </div>
         {schema && selectedProject ? (
-          <AnnotationCanvas project={selectedProject} image={selectedImage} schema={schema} annotation={annotation} setAnnotation={setAnnotation} activeClass={activeClass} tool={tool} activeKeypoint={activeKeypoint} zoom={zoom} />
+          <AnnotationCanvas project={selectedProject} image={selectedImage} schema={schema} annotation={annotation} setAnnotation={setAnnotation} activeClass={activeClass} tool={tool} activeKeypoint={activeKeypoint} setActiveKeypoint={setActiveKeypoint} zoom={zoom} />
         ) : (
           <div className="empty-state"><ImageIcon size={32} /><strong>还没有打开项目</strong><span>请先到“数据”页面导入或上传图片。</span></div>
         )}
