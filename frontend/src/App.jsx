@@ -186,9 +186,7 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
     }
     if (schema.task_type === "pose" && tool === "keypoint") {
       const targetIndex =
-        selected?.type === "bbox"
-          ? selected.instanceIndex
-          : (annotation?.instances || []).findIndex((inst) => inst.type === "pose" && pointInBox(pt, inst.bbox));
+        (annotation?.instances || []).findIndex((inst) => inst.type === "pose" && pointInBox(pt, inst.bbox));
       if (targetIndex >= 0) {
         const instances = JSON.parse(JSON.stringify(annotation?.instances || []));
         const inst = instances[targetIndex];
@@ -278,6 +276,20 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
 
   function startBboxDrag(instanceIndex, box, evt) {
     evt.stopPropagation();
+    if (schema.task_type === "pose" && tool === "keypoint") {
+      const pt = pointToSvg(evt, svgRef.current);
+      const instances = JSON.parse(JSON.stringify(annotation?.instances || []));
+      const inst = instances[instanceIndex];
+      if (inst) {
+        inst.keypoints = schema.keypoints.map((name) => {
+          const existing = (inst.keypoints || []).find((p) => p.name === name) || { name, x: 0, y: 0, v: 0 };
+          return name === activeKeypoint ? { name, x: pt.x, y: pt.y, v: 2 } : existing;
+        });
+        setAnnotation({ ...annotation, instances });
+        setSelected({ type: "keypoint", instanceIndex, key: activeKeypoint });
+      }
+      return;
+    }
     evt.currentTarget.setPointerCapture?.(evt.pointerId);
     selectOnly({ type: "bbox", instanceIndex, key: "bbox" });
     setDrag({ type: "bbox", instanceIndex, start: pointToSvg(evt, svgRef.current), startBox: { ...box } });
