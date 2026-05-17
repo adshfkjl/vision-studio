@@ -149,6 +149,11 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
     return selected?.type === type && selected.instanceIndex === instanceIndex && selected.key === key;
   }
 
+  function pointInBox(pt, box) {
+    if (!box) return false;
+    return pt.x >= box.cx - box.w / 2 && pt.x <= box.cx + box.w / 2 && pt.y >= box.cy - box.h / 2 && pt.y <= box.cy + box.h / 2;
+  }
+
   function selectOnly(next) {
     setSelected(next);
     setDraftBox(null);
@@ -180,17 +185,20 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
       return;
     }
     if (schema.task_type === "pose" && tool === "keypoint") {
-      if (selected?.type === "bbox") {
-        const instances = [...(annotation?.instances || [])];
-        const inst = instances[selected.instanceIndex];
-        const current = inst?.keypoints?.find((p) => p.name === activeKeypoint);
-        if (inst && (!current || current.v === 0)) {
+      const targetIndex =
+        selected?.type === "bbox"
+          ? selected.instanceIndex
+          : (annotation?.instances || []).findIndex((inst) => inst.type === "pose" && pointInBox(pt, inst.bbox));
+      if (targetIndex >= 0) {
+        const instances = JSON.parse(JSON.stringify(annotation?.instances || []));
+        const inst = instances[targetIndex];
+        if (inst) {
           inst.keypoints = schema.keypoints.map((name) => {
-            const existing = inst.keypoints.find((p) => p.name === name) || { name, x: 0, y: 0, v: 0 };
+            const existing = (inst.keypoints || []).find((p) => p.name === name) || { name, x: 0, y: 0, v: 0 };
             return name === activeKeypoint ? { name, x: pt.x, y: pt.y, v: 2 } : existing;
           });
           setAnnotation({ ...annotation, instances });
-          setSelected({ type: "keypoint", instanceIndex: selected.instanceIndex, key: activeKeypoint });
+          setSelected({ type: "keypoint", instanceIndex: targetIndex, key: activeKeypoint });
         }
       }
       return;
@@ -292,6 +300,7 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
     }
     setAnnotation({ ...annotation, instances });
     setSelected(null);
+    setContextMenu(null);
   }
 
   function handleContextMenu(target, evt) {
@@ -369,7 +378,7 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
                         <circle
                           cx={p.x}
                           cy={p.y}
-                          r="0.002"
+                          r="0.004"
                           fill="#ffffff"
                           stroke={selectedPoint ? "#f59e0b" : color}
                           strokeWidth="0.001"
@@ -426,7 +435,7 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
                       <circle
                         cx={p.x}
                         cy={p.y}
-                        r="0.002"
+                        r="0.004"
                         fill="#ffffff"
                         stroke={selectedPoint ? "#f59e0b" : color}
                         strokeWidth="0.001"
