@@ -1,0 +1,14 @@
+backend/.deps/
+backend/__pycache__/
+backend/**/__pycache__/
+frontend/node_modules/
+frontend/dist/
+vision_studio_data/
+*.log
+*.err.log
+*.pt
+*.onnx
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.pyc

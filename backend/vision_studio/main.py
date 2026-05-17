@@ -1,0 +1,349 @@
+from __future__ import annotations
+
+import shutil
+from pathlib import Path
+from typing import Any
+
+from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
+
+from .datasets import materialize_dataset, materialize_preview, split_project
+from .jobs import export_onnx, load_job, start_training
+from .storage import (
+    DATA_ROOT,
+    REPO_ROOT,
+    abs_path,
+    annotation_path,
+    annotations_dir,
+    ensure_roots,
+    image_size,
+    iter_images,
+    list_projects,
+    load_project,
+    project_dir,
+    project_image_path,
+    save_project,
+    unique_project_id,
+    write_json,
+    yolo_labels_dir,
+)
+from .yolo import annotation_for_image, annotation_to_yolo, default_schema, schema_from_data_yaml
+from .validation import validate_project
+
+app = FastAPI(title="Vision Studio", version="0.1.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+FRONTEND_DIST = REPO_ROOT / "vision_studio" / "frontend" / "dist"
+
+
+class ImportProjectRequest(BaseModel):
+    name: str
+    task_type: str = Field(pattern="^(segment|pose)$")
+    image_dir: str
+    label_dir: str | None = None
+    data_yaml: str | None = None
+
+
+class CreateProjectRequest(BaseModel):
+    name: str
+    task_type: str = Field(pattern="^(segment|pose)$")
+    project_schema: dict[str, Any] | None = None
+
+
+class SplitRequest(BaseModel):
+    train: float = 0.8
+    val: float = 0.15
+    test: float = 0.05
+    seed: int = 42
+
+
+class TrainRequest(BaseModel):
+    task_type: str | None = None
+    model: str | None = None
+    epochs: int = 100
+    imgsz: int = 960
+    batch: int = 4
+    device: str = "auto"
+    lr0: float = 0.01
+    optimizer: str = "AdamW"
+    patience: int = 30
+    seed: int = 42
+    name: str = "studio_train"
+
+
+@app.on_event("startup")
+def startup() -> None:
+    ensure_roots()
+
+
+@app.get("/api/health")
+def health() -> dict[str, str]:
+    return {"status": "ok", "data_root": str(DATA_ROOT)}
+
+
+@app.get("/")
+def frontend_index() -> FileResponse:
+    index = FRONTEND_DIST / "index.html"
+    if not index.is_file():
+        raise HTTPException(404, "Frontend has not been built. Run npm run build in vision_studio/frontend.")
+    return FileResponse(index)
+
+
+@app.get("/api/projects")
+def get_projects() -> list[dict[str, Any]]:
+    return list_projects()
+
+
+@app.post("/api/projects")
+def create_project(req: CreateProjectRequest) -> dict[str, Any]:
+    ensure_roots()
+    project_id = unique_project_id(req.name)
+    pdir = project_dir(project_id)
+    for child in ("annotations", "splits", "runs", "exports", "uploads", "yolo_labels"):
+        (pdir / child).mkdir(parents=True, exist_ok=True)
+
+    schema = req.project_schema or default_schema(req.task_type)
+    schema.setdefault("task_type", req.task_type)
+    schema.setdefault("classes", default_schema(req.task_type)["classes"])
+    schema.setdefault("keypoints", default_schema(req.task_type)["keypoints"])
+    schema.setdefault("skeleton", default_schema(req.task_type)["skeleton"])
+    schema.setdefault("flip_idx", default_schema(req.task_type)["flip_idx"])
+
+    project = {
+        "id": project_id,
+        "name": req.name,
+        "task_type": req.task_type,
+        "image_dir": str(pdir / "uploads" / "images"),
+        "label_dir": None,
+        "data_yaml": None,
+        "schema": schema,
+        "images": [],
+        "split": None,
+    }
+    (pdir / "uploads" / "images").mkdir(parents=True, exist_ok=True)
+    save_project(project)
+    return project
+
+
+@app.post("/api/projects/import")
+def import_project(req: ImportProjectRequest) -> dict[str, Any]:
+    ensure_roots()
+    image_dir = abs_path(req.image_dir)
+    label_dir = abs_path(req.label_dir)
+    data_yaml = abs_path(req.data_yaml)
+    if image_dir is None or not image_dir.is_dir():
+        raise HTTPException(400, f"Image directory not found: {req.image_dir}")
+    if label_dir is not None and not label_dir.is_dir():
+        raise HTTPException(400, f"Label directory not found: {req.label_dir}")
+
+    project_id = unique_project_id(req.name)
+    pdir = project_dir(project_id)
+    for child in ("annotations", "splits", "runs", "exports"):
+        (pdir / child).mkdir(parents=True, exist_ok=True)
+
+    images = []
+    for image in iter_images(image_dir):
+        try:
+            w, h = image_size(image)
+        except Exception:
+            continue
+        rel = str(image.relative_to(image_dir)).replace("\\", "/")
+        images.append({"name": rel, "path": str(image), "width": w, "height": h, "annotated": False})
+
+    schema = schema_from_data_yaml(data_yaml, req.task_type)
+    project = {
+        "id": project_id,
+        "name": req.name,
+        "task_type": req.task_type,
+        "image_dir": str(image_dir),
+        "label_dir": str(label_dir) if label_dir else None,
+        "data_yaml": str(data_yaml) if data_yaml else None,
+        "schema": schema,
+        "images": images,
+        "split": None,
+    }
+    save_project(project)
+    return project
+
+
+@app.get("/api/projects/{project_id}/schema")
+def get_schema(project_id: str) -> dict[str, Any]:
+    return load_project(project_id)["schema"]
+
+
+@app.put("/api/projects/{project_id}/schema")
+def put_schema(project_id: str, schema: dict[str, Any]) -> dict[str, Any]:
+    project = load_project(project_id)
+    if "classes" not in schema or not schema["classes"]:
+        raise HTTPException(400, "At least one class is required")
+    schema.setdefault("task_type", project["schema"]["task_type"])
+    schema.setdefault("keypoints", [])
+    schema.setdefault("skeleton", [])
+    schema.setdefault("flip_idx", list(range(len(schema.get("keypoints", [])))))
+    project["schema"] = schema
+    project["task_type"] = schema["task_type"]
+    save_project(project)
+    return schema
+
+
+@app.get("/api/projects/{project_id}/images")
+def get_images(project_id: str, offset: int = 0, limit: int = 100) -> dict[str, Any]:
+    project = load_project(project_id)
+    items = project.get("images", [])
+    for item in items:
+        label_path = abs_path(project.get("label_dir"))
+        source_label = label_path / f"{Path(item['name']).stem}.txt" if label_path else None
+        item["annotated"] = annotation_path(project_id, item["name"]).is_file() or bool(source_label and source_label.is_file())
+    return {"total": len(items), "items": items[offset : offset + limit]}
+
+
+@app.post("/api/projects/{project_id}/images/upload")
+async def upload_images(project_id: str, files: list[UploadFile] = File(...)) -> dict[str, Any]:
+    project = load_project(project_id)
+    upload_dir = project_dir(project_id) / "uploads" / "images"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    added = []
+    existing_names = {item["name"] for item in project.get("images", [])}
+    for upload in files:
+        suffix = Path(upload.filename or "").suffix.lower()
+        if suffix not in {".bmp", ".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff"}:
+            continue
+        base_name = Path(upload.filename or "image").name
+        target = upload_dir / base_name
+        stem = target.stem
+        idx = 2
+        while target.exists() or f"uploaded/{target.name}" in existing_names:
+            target = upload_dir / f"{stem}-{idx}{suffix}"
+            idx += 1
+        with target.open("wb") as fh:
+            shutil.copyfileobj(upload.file, fh)
+        w, h = image_size(target)
+        item = {"name": f"uploaded/{target.name}", "path": str(target), "width": w, "height": h, "annotated": False}
+        project.setdefault("images", []).append(item)
+        added.append(item)
+        existing_names.add(item["name"])
+    save_project(project)
+    return {"added": added, "total": len(project.get("images", []))}
+
+
+@app.get("/api/projects/{project_id}/images/{image_name:path}")
+def get_image(project_id: str, image_name: str) -> FileResponse:
+    project = load_project(project_id)
+    path = project_image_path(project, image_name)
+    return FileResponse(path)
+
+
+@app.get("/api/projects/{project_id}/annotations/{image_name:path}")
+def get_annotation(project_id: str, image_name: str) -> dict[str, Any]:
+    project = load_project(project_id)
+    image = project_image_path(project, image_name)
+    w, h = image_size(image)
+    return {"image": image_name, "width": w, "height": h, "annotation": annotation_for_image(project, image_name)}
+
+
+@app.put("/api/projects/{project_id}/annotations/{image_name:path}")
+def put_annotation(project_id: str, image_name: str, annotation: dict[str, Any]) -> dict[str, Any]:
+    project = load_project(project_id)
+    path = annotation_path(project_id, image_name)
+    write_json(path, annotation)
+    label_dir = yolo_labels_dir(project_id)
+    label_dir.mkdir(parents=True, exist_ok=True)
+    (label_dir / f"{Path(image_name).stem}.txt").write_text(
+        annotation_to_yolo(annotation, project["schema"]),
+        encoding="utf-8",
+    )
+    for item in project.get("images", []):
+        if item["name"] == image_name:
+            item["annotated"] = True
+            break
+    save_project(project)
+    return {"ok": True, "annotation_path": str(path)}
+
+
+@app.post("/api/projects/{project_id}/split")
+def post_split(project_id: str, req: SplitRequest) -> dict[str, Any]:
+    project = load_project(project_id)
+    return split_project(project, req.train, req.val, req.test, req.seed)
+
+
+@app.get("/api/projects/{project_id}/validation")
+def get_validation(project_id: str) -> dict[str, Any]:
+    return validate_project(load_project(project_id))
+
+
+@app.post("/api/projects/{project_id}/train")
+def post_train(project_id: str, req: TrainRequest) -> dict[str, Any]:
+    project = load_project(project_id)
+    validation = validate_project(project)
+    if not validation["train_ready"]:
+        raise HTTPException(400, {"message": "Project validation failed", "validation": validation})
+    if not project.get("split"):
+        split_project(project, 0.8, 0.15, 0.05, req.seed)
+    params = req.model_dump()
+    params["task_type"] = params["task_type"] or project["schema"]["task_type"]
+    return start_training(project_id, params)
+
+
+@app.get("/api/jobs/{job_id}")
+def get_job(job_id: str) -> dict[str, Any]:
+    return load_job(job_id)
+
+
+@app.post("/api/jobs/{job_id}/export/onnx")
+def post_export_onnx(job_id: str) -> dict[str, Any]:
+    try:
+        return export_onnx(job_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@app.get("/api/artifacts/{job_id}/{artifact_name}")
+def get_artifact(job_id: str, artifact_name: str) -> FileResponse:
+    job = load_job(job_id)
+    artifact = job.get("artifacts", {}).get(artifact_name)
+    if not artifact:
+        raise HTTPException(404, "Artifact not found")
+    path_text = artifact.get("path") if isinstance(artifact, dict) else artifact
+    path = Path(path_text)
+    if not path.is_file():
+        raise HTTPException(404, "Artifact file missing")
+    return FileResponse(path, filename=path.name)
+
+
+@app.post("/api/projects/{project_id}/materialize")
+def post_materialize(project_id: str) -> dict[str, Any]:
+    project = load_project(project_id)
+    validation = validate_project(project)
+    if not validation["train_ready"]:
+        raise HTTPException(400, {"message": "Project validation failed", "validation": validation})
+    dataset = materialize_dataset(project)
+    preview = materialize_preview(dataset.root, dataset.data_yaml)
+    preview["validation"] = validation
+    return preview
+
+
+@app.post("/api/demo/import-current")
+def import_current_demo() -> dict[str, Any]:
+    image_dir = REPO_ROOT / "images"
+    label_dir = REPO_ROOT / "labels"
+    req = ImportProjectRequest(
+        name="current-pose",
+        task_type="pose",
+        image_dir=str(image_dir),
+        label_dir=str(label_dir),
+        data_yaml=str(REPO_ROOT / "yolo-pose" / "data.yaml"),
+    )
+    return import_project(req)
+
+
+if FRONTEND_DIST.is_dir():
+    app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="frontend-assets")
