@@ -483,6 +483,21 @@ pre {
   color: #0f766e;
 }
 
+.action-status {
+  background: #effaf7;
+  border: 1px solid #99d4c8;
+  border-radius: 8px;
+  color: #0f766e;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+}
+
+.action-status.error {
+  background: #fff1f1;
+  border-color: #f3a3a3;
+  color: #be123c;
+}
+
 .button-row {
   display: flex;
   gap: 8px;

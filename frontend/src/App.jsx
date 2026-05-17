@@ -108,14 +108,17 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
   const [draftBox, setDraftBox] = useState(null);
   const [selected, setSelected] = useState(null);
   const [drag, setDrag] = useState(null);
+  const [liveAnnotation, setLiveAnnotation] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
   const src = image ? imageUrl(project.id, image.name) : "";
+  const displayAnnotation = liveAnnotation || annotation;
 
   useEffect(() => {
     setSelected(null);
     setDrag(null);
     setDraft([]);
     setDraftBox(null);
+    setLiveAnnotation(null);
     setContextMenu(null);
   }, [image?.name]);
 
@@ -203,25 +206,26 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
       setDrag({ ...drag, current: pt });
       return;
     }
-    const instances = [...(annotation?.instances || [])];
+    const source = liveAnnotation || annotation;
+    const instances = JSON.parse(JSON.stringify(source?.instances || []));
     if (drag.type === "keypoint") {
       const inst = instances[drag.instanceIndex];
       inst.keypoints = schema.keypoints.map((name) => {
         const existing = inst.keypoints.find((p) => p.name === name) || { name, x: 0, y: 0, v: 0 };
         return name === drag.key ? { name, x: pt.x, y: pt.y, v: 2 } : existing;
       });
-      setAnnotation({ ...annotation, instances });
+      setLiveAnnotation({ ...source, instances });
       return;
     }
     if (drag.type === "polygon-point") {
       instances[drag.instanceIndex].points[drag.pointIndex] = pt;
-      setAnnotation({ ...annotation, instances });
+      setLiveAnnotation({ ...source, instances });
       return;
     }
     if (drag.type === "bbox") {
       const inst = instances[drag.instanceIndex];
       inst.bbox = clampBox({ ...drag.startBox, cx: drag.startBox.cx + pt.x - drag.start.x, cy: drag.startBox.cy + pt.y - drag.start.y });
-      setAnnotation({ ...annotation, instances });
+      setLiveAnnotation({ ...source, instances });
     }
   }
 
@@ -242,6 +246,10 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
         setSelected({ type: "bbox", instanceIndex: nextIndex, key: "bbox" });
       }
       setDraftBox(null);
+    }
+    if (liveAnnotation && drag.type !== "create-bbox") {
+      setAnnotation(liveAnnotation);
+      setLiveAnnotation(null);
     }
     setDrag(null);
   }
@@ -346,7 +354,7 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
           }}
           onContextMenu={handleCanvasContextMenu}
         >
-          {(annotation?.instances || []).map((inst, instanceIndex) => {
+          {(displayAnnotation?.instances || []).map((inst, instanceIndex) => {
             const color = clsColor(schema, inst.class_id);
             if (inst.type === "polygon") {
               const points = inst.points.map((p) => `${p.x},${p.y}`).join(" ");
@@ -525,31 +533,62 @@ const SchemaPanel = ({ schema, setSchema, selectedProject }) => {
 
 function DataPage({ projects, selectedProjectId, setSelectedProjectId, selectedProject, importForm, setImportForm, createForm, setCreateForm, refreshProjects, setMessage }) {
   const [files, setFiles] = useState([]);
+  const [actionStatus, setActionStatus] = useState("");
 
   async function doCreate() {
-    const project = await api.createProject({
-      name: createForm.name,
-      task_type: createForm.task_type,
-      project_schema: schemaFromForm(createForm),
-    });
-    await refreshProjects(project.id);
-    setMessage("项目已创建，可以上传图片开始标注");
+    try {
+      setActionStatus("正在创建项目...");
+      const project = await api.createProject({
+        name: createForm.name,
+        task_type: createForm.task_type,
+        project_schema: schemaFromForm(createForm),
+      });
+      await refreshProjects(project.id);
+      const text = `项目“${project.name}”已创建并选中，可以上传图片开始标注。`;
+      setActionStatus(text);
+      setMessage(text);
+    } catch (err) {
+      const text = `创建项目失败：${err.message}`;
+      setActionStatus(text);
+      setMessage(text);
+    }
   }
 
   async function doImport() {
-    const project = await api.importProject(importForm);
-    await refreshProjects(project.id);
+    try {
+      setActionStatus("正在导入项目...");
+      const project = await api.importProject(importForm);
+      await refreshProjects(project.id);
+      const text = `项目“${project.name}”已导入并选中。`;
+      setActionStatus(text);
+      setMessage(text);
+    } catch (err) {
+      const text = `导入失败：${err.message}`;
+      setActionStatus(text);
+      setMessage(text);
+    }
   }
 
   async function doImportCurrent() {
-    const project = await api.importCurrent();
-    await refreshProjects(project.id);
+    try {
+      setActionStatus("正在导入当前 Pose 数据...");
+      const project = await api.importCurrent();
+      await refreshProjects(project.id);
+      const text = `当前 Pose 数据已导入为“${project.name}”。`;
+      setActionStatus(text);
+      setMessage(text);
+    } catch (err) {
+      const text = `导入当前数据失败：${err.message}`;
+      setActionStatus(text);
+      setMessage(text);
+    }
   }
 
   async function uploadFiles() {
     if (!selectedProject || files.length === 0) return;
     await api.uploadImages(selectedProject.id, files);
     setFiles([]);
+    setActionStatus(`已上传 ${files.length} 张图片到“${selectedProject.name}”。`);
     setMessage("图片已上传");
     await refreshProjects(selectedProject.id);
   }
@@ -558,6 +597,7 @@ function DataPage({ projects, selectedProjectId, setSelectedProjectId, selectedP
     <div className="page-grid two-col">
       <section className="panel">
         <h2><Plus size={16} />创建项目</h2>
+        {actionStatus && <p className={`action-status ${actionStatus.includes("失败") ? "error" : ""}`}>{actionStatus}</p>}
         <div className="stack">
           <input value={createForm.name} onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })} placeholder="项目名" />
           <select value={createForm.task_type} onChange={(e) => setCreateForm({ ...createForm, task_type: e.target.value })}>
