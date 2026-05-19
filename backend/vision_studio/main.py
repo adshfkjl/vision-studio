@@ -13,8 +13,8 @@ from pydantic import BaseModel, Field
 from .datasets import materialize_dataset, materialize_preview, split_project
 from .jobs import export_onnx, load_job, start_training
 from .storage import (
+    APP_ROOT,
     DATA_ROOT,
-    REPO_ROOT,
     abs_path,
     annotation_path,
     annotations_dir,
@@ -43,7 +43,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-FRONTEND_DIST = REPO_ROOT / "vision_studio" / "frontend" / "dist"
+FRONTEND_DIST = APP_ROOT / "frontend" / "dist"
 
 
 class ImportProjectRequest(BaseModel):
@@ -339,14 +339,14 @@ def post_materialize(project_id: str) -> dict[str, Any]:
 
 @app.post("/api/demo/import-current")
 def import_current_demo() -> dict[str, Any]:
-    image_dir = REPO_ROOT / "images"
-    label_dir = REPO_ROOT / "labels"
+    image_dir = APP_ROOT / "images"
+    label_dir = APP_ROOT / "labels"
     req = ImportProjectRequest(
         name="current-pose",
         task_type="pose",
         image_dir=str(image_dir),
         label_dir=str(label_dir),
-        data_yaml=str(REPO_ROOT / "yolo-pose" / "data.yaml"),
+        data_yaml=str(APP_ROOT / "yolo-pose" / "data.yaml"),
     )
     return import_project(req)
 

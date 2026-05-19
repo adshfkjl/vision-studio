@@ -5,7 +5,7 @@ Local FastAPI + React workspace for image annotation, dataset splitting, YOLO tr
 ## Backend
 
 ```powershell
-cd D:\projects\2\vision_studio
+cd <path-to>\vision_studio
 .\run_backend.ps1
 ```
 
@@ -18,20 +18,20 @@ python -m pip install --target backend\.deps -r backend\requirements.txt
 ## Frontend
 
 ```powershell
-cd D:\projects\2\vision_studio
+cd <path-to>\vision_studio
 .\run_frontend.ps1
 ```
 
 If dependencies need to be recreated:
 
 ```powershell
-cd D:\projects\2\vision_studio\frontend
+cd <path-to>\vision_studio\frontend
 npm install
 ```
 
 Open `http://localhost:5173`.
 
-Use `POST /api/demo/import-current` or the import form to add the current `D:\projects\2\images` + `D:\projects\2\labels` pose project.
+Use the import form to add any absolute dataset path, or place demo data under this project as `images`, `labels`, and `yolo-pose/data.yaml`, then call `POST /api/demo/import-current`.
 
 ## Working Rule
 

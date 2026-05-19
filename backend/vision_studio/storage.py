@@ -14,7 +14,6 @@ IMAGE_EXTS = {".bmp", ".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff"}
 PACKAGE_ROOT = Path(__file__).resolve().parent
 BACKEND_ROOT = PACKAGE_ROOT.parent
 APP_ROOT = BACKEND_ROOT.parent
-REPO_ROOT = APP_ROOT.parent
 DATA_ROOT = APP_ROOT / "vision_studio_data"
 PROJECTS_ROOT = DATA_ROOT / "projects"
 JOBS_ROOT = DATA_ROOT / "jobs"
@@ -68,7 +67,7 @@ def exports_dir(project_id: str) -> Path:
     return project_dir(project_id) / "exports"
 
 
-def abs_path(path_text: str | None, base: Path = REPO_ROOT) -> Path | None:
+def abs_path(path_text: str | None, base: Path = APP_ROOT) -> Path | None:
     if not path_text:
         return None
     path = Path(path_text)
