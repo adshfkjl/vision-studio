@@ -49,6 +49,90 @@ const blankTrain = {
   name: "studio_train",
 };
 
+const TASK_ORDER = ["detect", "segment", "pose", "classify", "obb"];
+const TASK_FALLBACKS = {
+  detect: { task_type: "detect", display_name: "Detection", station_annotation: true, default_model: "yolov8n.pt" },
+  segment: { task_type: "segment", display_name: "Segmentation", station_annotation: true, default_model: "yolov8n-seg.pt" },
+  pose: { task_type: "pose", display_name: "Pose", station_annotation: true, default_model: "yolov8n-pose.pt" },
+  classify: { task_type: "classify", display_name: "Classification", station_annotation: false, default_model: "yolov8n-cls.pt" },
+  obb: { task_type: "obb", display_name: "Oriented Bounding Box", station_annotation: false, default_model: "yolov8n-obb.pt" },
+};
+
+function taskInfo(tasks, taskType) {
+  return tasks?.find((task) => task.task_type === taskType) || TASK_FALLBACKS[taskType] || TASK_FALLBACKS.detect;
+}
+
+function defaultModelForTask(tasks, taskType) {
+  return taskInfo(tasks, taskType).default_model || TASK_FALLBACKS[taskType]?.default_model || "yolov8n.pt";
+}
+
+function taskPresets(taskType) {
+  return {
+    detect: ["yolov8n.pt", "yolov8s.pt", "yolov8m.pt"],
+    segment: ["yolov8n-seg.pt", "yolov8s-seg.pt"],
+    pose: ["yolov8n-pose.pt", "yolov8s-pose.pt"],
+    classify: ["yolov8n-cls.pt", "yolov8s-cls.pt"],
+    obb: ["yolov8n-obb.pt", "yolov8s-obb.pt"],
+  }[taskType] || ["yolov8n.pt"];
+}
+
+function capabilityText(task) {
+  return task.station_annotation ? "站内标注 + 导入训练" : "导入训练";
+}
+
+function formDefaults(taskType) {
+  if (taskType === "pose") {
+    return {
+      classesText: "stem",
+      keypointsText: "stem_root, stem_mid, stem_top",
+      skeletonText: "0-1, 1-2",
+      flipText: "2, 1, 0",
+    };
+  }
+  return {
+    classesText: "stem",
+    keypointsText: "",
+    skeletonText: "",
+    flipText: "",
+  };
+}
+
+function createFormForTask(taskType) {
+  return {
+    name: "new-project",
+    task_type: taskType,
+    ...formDefaults(taskType),
+  };
+}
+
+function importFormForTask(taskType) {
+  return {
+    name: taskType === "pose" ? "current-pose" : `current-${taskType}`,
+    task_type: taskType,
+    image_dir: "images",
+    label_dir: taskType === "classify" || taskType === "obb" ? "" : "labels",
+    data_yaml: taskType === "classify" || taskType === "obb" ? "" : "data.yaml",
+  };
+}
+
+function updateCreateFormTask(current, taskType) {
+  return {
+    ...createFormForTask(taskType),
+    name: current.name || "new-project",
+  };
+}
+
+function updateImportFormTask(current, taskType) {
+  const base = importFormForTask(taskType);
+  return {
+    ...base,
+    name: current.name || base.name,
+    image_dir: current.image_dir || base.image_dir,
+    label_dir: taskType === "classify" || taskType === "obb" ? "" : current.label_dir || base.label_dir,
+    data_yaml: taskType === "classify" || taskType === "obb" ? "" : current.data_yaml || base.data_yaml,
+  };
+}
+
 function clsName(schema, id) {
   return schema?.classes?.find((c) => Number(c.id) === Number(id))?.name || `class ${id}`;
 }
@@ -192,7 +276,7 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
     if (!svgRef.current) return;
     if (evt.button === 2) return;
     const pt = pointToSvg(evt, svgRef.current);
-    if (schema.task_type === "pose" && tool === "bbox") {
+    if ((schema.task_type === "pose" || schema.task_type === "detect") && tool === "bbox") {
       setSelected(null);
       setDrag({ type: "create-bbox", start: pt, current: pt });
       setDraftBox(normalizedBox(pt, pt));
@@ -256,12 +340,14 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
       const end = pointToSvg(evt, svgRef.current);
       const bbox = normalizedBox(drag.start, end);
       if (bbox.w > 0.004 && bbox.h > 0.004) {
-        const inst = {
-          type: "pose",
-          class_id: Number(activeClass),
-          bbox,
-          keypoints: schema.keypoints.map((name) => ({ name, x: 0, y: 0, v: 0 })),
-        };
+        const inst = schema.task_type === "detect"
+          ? { type: "box", class_id: Number(activeClass), bbox }
+          : {
+            type: "pose",
+            class_id: Number(activeClass),
+            bbox,
+            keypoints: schema.keypoints.map((name) => ({ name, x: 0, y: 0, v: 0 })),
+          };
         const nextIndex = (annotation?.instances || []).length;
         setAnnotation({ ...annotation, instances: [...(annotation?.instances || []), inst] });
         setSelected({ type: "bbox", instanceIndex: nextIndex, key: "bbox" });
@@ -569,8 +655,9 @@ const SchemaPanel = ({ schema, setSchema, selectedProject }) => {
   );
 };
 
-function ProjectCenter({ projects, setSelectedProjectId, setPage, importForm, setImportForm, createForm, setCreateForm, refreshProjects, setMessage }) {
+function ProjectCenter({ projects, tasks, setSelectedProjectId, setPage, importForm, setImportForm, createForm, setCreateForm, refreshProjects, setMessage }) {
   const [actionStatus, setActionStatus] = useState("");
+  const taskCards = TASK_ORDER.map((taskType) => taskInfo(tasks, taskType));
 
   function enterProject(projectId) {
     setSelectedProjectId(projectId);
@@ -634,12 +721,37 @@ function ProjectCenter({ projects, setSelectedProjectId, setPage, importForm, se
       <section className="center-hero">
         <div>
           <span className="eyebrow">Project Center</span>
-          <h2>选择一个视觉项目开始工作</h2>
-          <p>进入项目后再上传图片、编辑标签、标注、划分数据集和训练模型。</p>
+          <h2>先选项目，再选训练任务</h2>
+          <p>创建或导入项目后，在项目里继续做标注、划分和训练。分类与 OBB 当前支持导入训练，站内标注后续补齐。</p>
         </div>
         <div className="hero-metrics">
           <span><b>{projects.length}</b>项目</span>
           <span><b>{projects.reduce((sum, p) => sum + (p.images?.length || 0), 0)}</b>图片</span>
+        </div>
+      </section>
+
+      <section className="panel task-rail">
+        <div className="task-rail-head">
+          <div>
+            <h2><Brain size={16} />任务族</h2>
+            <p>从这里切换创建和导入的目标任务。</p>
+          </div>
+        </div>
+        <div className="task-strip">
+          {taskCards.map((task) => (
+            <button
+              key={task.task_type}
+              className={`task-card ${createForm.task_type === task.task_type ? "selected" : ""}`}
+                onClick={() => {
+                setCreateForm((current) => updateCreateFormTask(current, task.task_type));
+                setImportForm((current) => updateImportFormTask(current, task.task_type));
+              }}
+            >
+              <strong>{task.display_name}</strong>
+              <span>{capabilityText(task)}</span>
+              <small>{task.default_model}</small>
+            </button>
+          ))}
         </div>
       </section>
 
@@ -648,15 +760,17 @@ function ProjectCenter({ projects, setSelectedProjectId, setPage, importForm, se
       <section className="project-grid">
         {projects.map((project) => {
           const annotated = (project.images || []).filter((img) => img.annotated).length;
+          const task = taskInfo(tasks, project.task_type || project.schema?.task_type);
           return (
             <button className="project-card" key={project.id} onClick={() => enterProject(project.id)}>
               <div>
                 <strong>{project.name}</strong>
-                <span>{project.task_type || project.schema?.task_type}</span>
+                <span>{task.display_name}</span>
               </div>
               <div className="project-card-stats">
                 <span>{project.images?.length || 0} 图</span>
                 <span>{annotated} 已标</span>
+                <span>{capabilityText(task)}</span>
               </div>
             </button>
           );
@@ -669,9 +783,8 @@ function ProjectCenter({ projects, setSelectedProjectId, setPage, importForm, se
           <h2><Plus size={16} />创建项目</h2>
           <div className="stack">
             <input value={createForm.name} onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })} placeholder="项目名" />
-            <select value={createForm.task_type} onChange={(e) => setCreateForm({ ...createForm, task_type: e.target.value })}>
-              <option value="pose">Pose</option>
-              <option value="segment">Segment</option>
+            <select value={createForm.task_type} onChange={(e) => setCreateForm((current) => updateCreateFormTask(current, e.target.value))}>
+              {taskCards.map((task) => <option key={task.task_type} value={task.task_type}>{task.display_name}</option>)}
             </select>
             <label>标签类别，逗号分隔</label>
             <input value={createForm.classesText} onChange={(e) => setCreateForm({ ...createForm, classesText: e.target.value })} placeholder="stem, root" />
@@ -692,9 +805,8 @@ function ProjectCenter({ projects, setSelectedProjectId, setPage, importForm, se
           <h2><FolderInput size={16} />项目导入</h2>
           <div className="stack">
             <input value={importForm.name} onChange={(e) => setImportForm({ ...importForm, name: e.target.value })} placeholder="项目名" />
-            <select value={importForm.task_type} onChange={(e) => setImportForm({ ...importForm, task_type: e.target.value })}>
-              <option value="pose">Pose</option>
-              <option value="segment">Segment</option>
+            <select value={importForm.task_type} onChange={(e) => setImportForm((current) => updateImportFormTask(current, e.target.value))}>
+              {taskCards.map((task) => <option key={task.task_type} value={task.task_type}>{task.display_name}</option>)}
             </select>
             <input value={importForm.image_dir} onChange={(e) => setImportForm({ ...importForm, image_dir: e.target.value })} placeholder="图片目录，例如 images" />
             <input value={importForm.label_dir || ""} onChange={(e) => setImportForm({ ...importForm, label_dir: e.target.value })} placeholder="标签目录，例如 labels" />
@@ -720,6 +832,11 @@ function ProjectOverview({ project, validation, setPage }) {
       <section className="panel overview-primary">
         <h2>{project.name}</h2>
         <p>当前工作区只作用于这个项目。上传、标注、划分和训练都会写入该项目目录。</p>
+        <div className="task-chip-row">
+          <span className="task-chip">{project.schema?.task_type || project.task_type}</span>
+          <span className="task-chip">{project.schema?.task_type === "pose" ? "站内标注" : "导入训练"}</span>
+          <span className="task-chip">{project.schema?.task_type === "classify" || project.schema?.task_type === "obb" ? "先导入后训练" : "可站内标注"}</span>
+        </div>
         <div className="metric-row">
           <span><b>{images.length}</b>图片</span>
           <span><b>{annotated}</b>已标注</span>
@@ -892,7 +1009,7 @@ function SplitPage({ project, schema, setSchema, setMessage }) {
   );
 }
 
-function TrainingPage({ project, schema, validation, refreshValidation, setMessage }) {
+function TrainingPage({ project, schema, tasks, validation, refreshValidation, setMessage }) {
   const [train, setTrain] = useState(blankTrain);
   const [job, setJob] = useState(null);
   const [materialized, setMaterialized] = useState(null);
@@ -948,10 +1065,19 @@ function TrainingPage({ project, schema, validation, refreshValidation, setMessa
   const summary = validation?.summary || {};
   const trainReady = Boolean(validation?.train_ready);
   const artifacts = Object.entries(job?.artifacts || {});
+  const task = taskInfo(tasks, schema.task_type);
+  const modelPresets = taskPresets(schema.task_type);
+  const annotationAvailable = Boolean(task.station_annotation);
+  const modelPlaceholder = defaultModelForTask(tasks, schema.task_type);
 
   return (
     <section className="panel train-page workflow">
       <h2><Brain size={16} />训练闭环</h2>
+      <div className="task-bar">
+        <span className="task-chip">{task.display_name}</span>
+        <span className="task-chip">{capabilityText(task)}</span>
+        <span className="task-chip">默认模型：{task.default_model}</span>
+      </div>
       <div className={`preflight ${validation?.status || "unknown"}`}>
         <div>
           <strong>训练前检查：{validation?.status || "未检查"}</strong>
@@ -984,6 +1110,11 @@ function TrainingPage({ project, schema, validation, refreshValidation, setMessa
           <pre>{materialized.data_yaml}</pre>
         </div>
       )}
+      {!annotationAvailable && (
+        <div className="action-status">
+          这个任务当前只开放导入训练。站内标注会在后续版本补齐。
+        </div>
+      )}
       <div className="workflow-step">
         <div>
           <strong>2. 训练参数</strong>
@@ -991,7 +1122,12 @@ function TrainingPage({ project, schema, validation, refreshValidation, setMessa
         </div>
       </div>
       <div className="grid-4">
-        <label>模型<input placeholder={schema.task_type === "pose" ? "yolov8n-pose.pt" : "yolov8n-seg.pt"} value={train.model} onChange={(e) => setTrain({ ...train, model: e.target.value })} /></label>
+        <label>模型
+          <select value={train.model} onChange={(e) => setTrain({ ...train, model: e.target.value })}>
+            <option value="">{modelPlaceholder}</option>
+            {modelPresets.map((model) => <option key={model} value={model}>{model}</option>)}
+          </select>
+        </label>
         <label>名称<input value={train.name} onChange={(e) => setTrain({ ...train, name: e.target.value })} /></label>
         <label>Epochs<input type="number" value={train.epochs} onChange={(e) => setTrain({ ...train, epochs: Number(e.target.value) })} /></label>
         <label>Imgsz<input type="number" value={train.imgsz} onChange={(e) => setTrain({ ...train, imgsz: Number(e.target.value) })} /></label>
@@ -1020,6 +1156,7 @@ function TrainingPage({ project, schema, validation, refreshValidation, setMessa
 export default function App() {
   const [page, setPage] = useState("projects");
   const [navOpen, setNavOpen] = useState(true);
+  const [tasks, setTasks] = useState([]);
   const [projects, setProjects] = useState([]);
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [images, setImages] = useState([]);
@@ -1041,6 +1178,8 @@ export default function App() {
 
   const selectedProject = useMemo(() => projects.find((p) => p.id === selectedProjectId), [projects, selectedProjectId]);
   const selectedImage = useMemo(() => images.find((img) => img.name === selectedImageName), [images, selectedImageName]);
+  const currentTask = taskInfo(tasks, selectedProject?.task_type || schema?.task_type);
+  const canAnnotateInStation = Boolean(currentTask.station_annotation);
 
   async function refreshProjects(preferredId = selectedProjectId) {
     try {
@@ -1054,6 +1193,26 @@ export default function App() {
     }
   }
 
+  async function refreshTasks() {
+    try {
+      const loaded = await api.tasks();
+      setTasks(loaded);
+    } catch (err) {
+      setTasks(Object.values(TASK_FALLBACKS));
+      setMessage(`任务列表加载失败，已使用本地默认值：${err.message}`);
+    }
+  }
+
+  async function refreshTasks() {
+    try {
+      const loaded = await api.tasks();
+      setTasks(loaded);
+    } catch (err) {
+      setTasks(Object.values(TASK_FALLBACKS));
+      setMessage(`任务列表加载失败，已使用本地默认值：${err.message}`);
+    }
+  }
+
   async function refreshProjectData(projectId = selectedProjectId) {
     if (!projectId) return;
     const [imgData, schemaData, validationData] = await Promise.all([api.images(projectId), api.schema(projectId), api.validation(projectId).catch(() => null)]);
@@ -1063,11 +1222,12 @@ export default function App() {
     setActiveClass(schemaData.classes?.[0]?.id ?? 0);
     setActiveKeypoint(schemaData.keypoints?.[0] || "");
     setSelectedImageName((current) => imgData.items.some((img) => img.name === current) ? current : imgData.items[0]?.name || "");
-    setTool(schemaData.task_type === "pose" ? "bbox" : "polygon");
+    setTool(schemaData.task_type === "pose" || schemaData.task_type === "detect" ? "bbox" : "polygon");
   }
 
   useEffect(() => {
     refreshProjects();
+    refreshTasks();
   }, []);
 
   useEffect(() => {
@@ -1155,6 +1315,13 @@ export default function App() {
   }
 
   useEffect(() => {
+    if (selectedProject && page === "annotate" && !canAnnotateInStation) {
+      setPage("train");
+      setMessage("当前任务先支持导入训练，站内标注后续开放。");
+    }
+  }, [selectedProject?.id, page, canAnnotateInStation]);
+
+  useEffect(() => {
     if (saveState !== "dirty" || !selectedProject || !selectedImage) return;
     const timer = setTimeout(() => {
       saveAnnotation().catch((err) => setMessage(err.message));
@@ -1206,6 +1373,7 @@ export default function App() {
         <main className="project-shell">
           <ProjectCenter
             projects={projects}
+            tasks={tasks}
             setSelectedProjectId={setSelectedProjectId}
             setPage={setPage}
             importForm={importForm}
@@ -1226,7 +1394,7 @@ export default function App() {
               <h2>{selectedProject.name}</h2>
             </div>
             <div className="project-meta">
-              <span>{selectedProject.task_type || schema?.task_type}</span>
+              <span>{taskInfo(tasks, selectedProject.task_type || schema?.task_type).display_name}</span>
               <span>{images.length} 图片</span>
               <span>{images.filter((img) => img.annotated).length} 已标</span>
               <span>{validation?.status || "未检查"}</span>
@@ -1237,7 +1405,7 @@ export default function App() {
               ["overview", "概览"],
               ["data", "数据"],
               ["labels", "标签与骨架"],
-              ["annotate", "标注"],
+              ...(canAnnotateInStation ? [["annotate", "标注"]] : []),
               ["split", "划分"],
               ["train", "训练导出"],
             ].map(([id, label]) => (
@@ -1248,7 +1416,7 @@ export default function App() {
             {page === "overview" && <ProjectOverview project={selectedProject} validation={validation} setPage={setPage} />}
             {page === "data" && <ProjectDataPage selectedProject={selectedProject} refreshProjects={refreshProjects} setMessage={setMessage} />}
             {page === "labels" && schema && <SchemaPanel schema={schema} setSchema={setSchema} selectedProject={selectedProject} />}
-            {page === "annotate" && (
+            {page === "annotate" && canAnnotateInStation && (
               <AnnotatePage
                 images={images}
                 selectedImageName={selectedImageName}
@@ -1278,7 +1446,7 @@ export default function App() {
               />
             )}
             {page === "split" && <SplitPage project={selectedProject} schema={schema} setSchema={setSchema} setMessage={setMessage} />}
-            {page === "train" && <TrainingPage project={selectedProject} schema={schema} validation={validation} refreshValidation={refreshValidation} setMessage={setMessage} />}
+            {page === "train" && <TrainingPage project={selectedProject} schema={schema} tasks={tasks} validation={validation} refreshValidation={refreshValidation} setMessage={setMessage} />}
             {message && page !== "annotate" && <p className="global-message">{message}</p>}
           </main>
         </div>

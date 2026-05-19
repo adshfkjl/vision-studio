@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from .storage import annotation_path, project_image_path, read_json
+from .storage import annotation_path, project_image_path, read_json, yolo_label_path
 from .yolo import annotation_for_image
 
 
@@ -32,6 +32,8 @@ def _load_annotation(project: dict[str, Any], image_name: str) -> dict[str, Any]
 def validate_project(project: dict[str, Any]) -> dict[str, Any]:
     schema = project.get("schema") or {}
     task_type = schema.get("task_type") or project.get("task_type")
+    if task_type is None:
+        task_type = "segment"
     class_ids = {int(cls.get("id", 0)) for cls in schema.get("classes", [])}
     keypoints = [str(name) for name in schema.get("keypoints", [])]
     issues: list[dict[str, Any]] = []
@@ -58,6 +60,16 @@ def validate_project(project: dict[str, Any]) -> dict[str, Any]:
             continue
 
         instances = annotation.get("instances", []) if isinstance(annotation, dict) else []
+        if task_type == "obb" and not instances:
+            label_path = yolo_label_path(project, image_name)
+            if label_path and label_path.is_file():
+                raw_lines = [line.strip().split() for line in label_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+                if raw_lines and all(len(parts) == 9 and all(_in_unit(value) for value in parts[1:]) for parts in raw_lines):
+                    annotated_images += 1
+                    continue
+                issues.append(_issue("error", image_name, "obb_label", "OBB labels must use class plus four normalized corner points."))
+                invalid_images.add(image_name)
+                continue
         if not instances:
             empty_annotations += 1
             issues.append(_issue("warning", image_name, "empty_annotation", "Image has no labeled instances."))
@@ -103,6 +115,26 @@ def validate_project(project: dict[str, Any]) -> dict[str, Any]:
                         break
                     if int(point.get("v", -1)) not in (0, 1, 2):
                         issues.append(_issue("error", image_name, "visibility", f"Instance {index + 1} has invalid keypoint visibility."))
+                        image_has_error = True
+                        break
+            if task_type == "detect":
+                bbox = instance.get("bbox") or {}
+                if instance.get("type") not in {"box", "bbox"}:
+                    issues.append(_issue("error", image_name, "bbox_type", f"Instance {index + 1} must be a bounding box."))
+                    image_has_error = True
+                for field in ("cx", "cy", "w", "h"):
+                    if not _in_unit(bbox.get(field)):
+                        issues.append(_issue("error", image_name, "coordinate_range", f"Instance {index + 1} bbox {field} is outside 0..1."))
+                        image_has_error = True
+                        break
+            if task_type == "obb":
+                points = instance.get("points", [])
+                if instance.get("type") != "obb" or len(points) != 4:
+                    issues.append(_issue("error", image_name, "obb_points", f"Instance {index + 1} must contain four corner points."))
+                    image_has_error = True
+                for point in points:
+                    if not _in_unit(point.get("x")) or not _in_unit(point.get("y")):
+                        issues.append(_issue("error", image_name, "coordinate_range", f"Instance {index + 1} has a corner point outside 0..1."))
                         image_has_error = True
                         break
 

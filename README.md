@@ -32,3 +32,7 @@ npm install
 Open `http://localhost:5173`.
 
 Use `POST /api/demo/import-current` or the import form to add the current `D:\projects\2\images` + `D:\projects\2\labels` pose project.
+
+## Working Rule
+
+After each change, update `README.md` when behavior or usage changes, then stage and commit the change locally.

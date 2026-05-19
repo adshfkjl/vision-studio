@@ -5,42 +5,39 @@ from typing import Any
 
 import yaml
 
-from .storage import abs_path, annotation_path, image_size, load_project, project_image_path, read_json
+from .storage import abs_path, annotation_path, image_size, iter_images, load_project, project_image_path, read_json, yolo_label_path
+from .tasks import DEFAULT_COLORS, default_schema_for_task
 
 
-DEFAULT_COLORS = [
-    "#0f766e",
-    "#d97706",
-    "#2563eb",
-    "#be123c",
-    "#7c3aed",
-    "#15803d",
-    "#c2410c",
-]
+SPLIT_NAMES = {"train", "val", "test"}
 
 
 def default_schema(task_type: str) -> dict[str, Any]:
-    schema: dict[str, Any] = {
-        "task_type": task_type,
-        "classes": [{"id": 0, "name": "stem", "color": DEFAULT_COLORS[0]}],
-        "keypoints": [],
-        "skeleton": [],
-        "flip_idx": [],
-    }
-    if task_type == "pose":
-        schema.update(
-            {
-                "keypoints": ["stem_root", "stem_mid", "stem_top"],
-                "skeleton": [[0, 1], [1, 2]],
-                "flip_idx": [2, 1, 0],
-            }
-        )
-    return schema
+    return default_schema_for_task(task_type)
 
 
-def schema_from_data_yaml(path: Path | None, task_type: str) -> dict[str, Any]:
+def schema_from_data_yaml(path: Path | None, task_type: str, image_dir: Path | None = None) -> dict[str, Any]:
     schema = default_schema(task_type)
     if path is None or not path.is_file():
+        if task_type == "classify" and image_dir is not None:
+            class_names = set()
+            for child in image_dir.iterdir() if image_dir.is_dir() else []:
+                if not child.is_dir():
+                    continue
+                if child.name in SPLIT_NAMES:
+                    class_names.update(grandchild.name for grandchild in child.iterdir() if grandchild.is_dir())
+                else:
+                    class_names.add(child.name)
+            for image in iter_images(image_dir):
+                class_name = classification_class_name(str(image.relative_to(image_dir)))
+                if class_name:
+                    class_names.add(class_name)
+            class_names = sorted(class_names)
+            if class_names:
+                schema["classes"] = [
+                    {"id": idx, "name": name, "color": DEFAULT_COLORS[idx % len(DEFAULT_COLORS)]}
+                    for idx, name in enumerate(class_names)
+                ]
         return schema
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     names = data.get("names")
@@ -70,6 +67,36 @@ def schema_from_data_yaml(path: Path | None, task_type: str) -> dict[str, Any]:
     return schema
 
 
+def classification_class_name(image_name: str) -> str | None:
+    parts = [part for part in image_name.replace("\\", "/").split("/") if part]
+    if len(parts) < 2:
+        return None
+    parent = parts[-2]
+    if parent in SPLIT_NAMES and len(parts) >= 3:
+        return parts[-3] or None
+    return parent or None
+
+
+def classification_class_id(project: dict[str, Any], image_name: str) -> int | None:
+    class_name = classification_class_name(image_name)
+    if class_name is None:
+        return None
+    for cls in project.get("schema", {}).get("classes", []):
+        if str(cls.get("name")) == class_name:
+            return int(cls.get("id", 0))
+    return None
+
+
+def image_has_label(project: dict[str, Any], image_name: str) -> bool:
+    task_type = project.get("schema", {}).get("task_type") or project.get("task_type")
+    if task_type == "classify":
+        return classification_class_id(project, image_name) is not None
+    if task_type == "obb":
+        label_dir = abs_path(project.get("label_dir"))
+        return bool(label_dir and (label_dir / f"{Path(image_name).stem}.txt").is_file())
+    return annotation_path(project["id"], image_name).is_file() or bool(yolo_label_path(project, image_name) and yolo_label_path(project, image_name).is_file())
+
+
 def parse_yolo_label(label_path: Path, task_type: str, schema: dict[str, Any]) -> dict[str, Any]:
     annotation = {"version": 1, "instances": []}
     if not label_path.is_file():
@@ -81,6 +108,14 @@ def parse_yolo_label(label_path: Path, task_type: str, schema: dict[str, Any]) -
             continue
         class_id = int(float(parts[0]))
         values = [float(x) for x in parts[1:]]
+        if task_type == "detect" and len(values) >= 4:
+            bbox = {"cx": values[0], "cy": values[1], "w": values[2], "h": values[3]}
+            annotation["instances"].append({"type": "box", "class_id": class_id, "bbox": bbox})
+        elif task_type == "classify":
+            annotation["instances"].append({"type": "classification", "class_id": class_id, "class_name": schema.get("classes", [{}])[class_id].get("name") if class_id < len(schema.get("classes", [])) else ""})
+        elif task_type == "obb" and len(values) >= 8:
+            points = [{"x": values[i], "y": values[i + 1]} for i in range(0, 8, 2)]
+            annotation["instances"].append({"type": "obb", "class_id": class_id, "points": points})
         if task_type == "pose" and len(values) >= 4:
             bbox = {"cx": values[0], "cy": values[1], "w": values[2], "h": values[3]}
             raw_kpts = values[4:]
@@ -102,6 +137,21 @@ def annotation_for_image(project: dict[str, Any], image_name: str) -> dict[str, 
     saved = read_json(annotation_path(project["id"], image_name))
     if saved is not None:
         return saved
+    if project["schema"]["task_type"] == "classify":
+        class_id = classification_class_id(project, image_name)
+        if class_id is None:
+            return {"version": 1, "instances": []}
+        class_name = classification_class_name(image_name) or ""
+        return {
+            "version": 1,
+            "instances": [
+                {
+                    "type": "classification",
+                    "class_id": class_id,
+                    "class_name": class_name,
+                }
+            ],
+        }
     label_dir = abs_path(project.get("label_dir"))
     if label_dir is None:
         return {"version": 1, "instances": []}
@@ -117,6 +167,20 @@ def annotation_to_yolo(annotation: dict[str, Any], schema: dict[str, Any]) -> st
     lines: list[str] = []
     for inst in annotation.get("instances", []):
         class_id = int(inst.get("class_id", 0))
+        if task_type == "detect" and inst.get("type") in {"box", "bbox"}:
+            bbox = inst.get("bbox") or {}
+            vals = [bbox.get("cx", 0), bbox.get("cy", 0), bbox.get("w", 0), bbox.get("h", 0)]
+            lines.append(" ".join([str(class_id), *[format_float(v) if isinstance(v, float) else str(v) for v in vals]]))
+        elif task_type == "classify" and inst.get("type") == "classification":
+            lines.append(str(class_id))
+        elif task_type == "obb" and inst.get("type") == "obb":
+            points = inst.get("points", [])
+            if len(points) != 4:
+                continue
+            vals: list[float] = []
+            for pt in points:
+                vals.extend([pt.get("x", 0), pt.get("y", 0)])
+            lines.append(" ".join([str(class_id), *[format_float(v) for v in vals]]))
         if task_type == "pose" and inst.get("type") == "pose":
             bbox = inst.get("bbox") or {}
             vals = [bbox.get("cx", 0), bbox.get("cy", 0), bbox.get("w", 0), bbox.get("h", 0)]
@@ -139,13 +203,22 @@ def annotation_to_yolo(annotation: dict[str, Any], schema: dict[str, Any]) -> st
 def data_yaml_text(project: dict[str, Any], dataset_root: Path) -> str:
     schema = project["schema"]
     root = str(dataset_root.resolve()).replace("\\", "/")
-    lines = [
-        f"path: {root}",
-        "train: images/train",
-        "val: images/val",
-    ]
-    if (dataset_root / "images" / "test").is_dir():
-        lines.append("test: images/test")
+    if schema["task_type"] == "classify":
+        lines = [
+            f"path: {root}",
+            "train: train",
+            "val: val",
+        ]
+        if (dataset_root / "test").is_dir():
+            lines.append("test: test")
+    else:
+        lines = [
+            f"path: {root}",
+            "train: images/train",
+            "val: images/val",
+        ]
+        if (dataset_root / "images" / "test").is_dir():
+            lines.append("test: images/test")
     if schema["task_type"] == "pose":
         kpts = schema.get("keypoints", [])
         lines.append(f"kpt_shape: [{len(kpts)}, 3]")
@@ -167,4 +240,3 @@ def load_annotation_with_size(project_id: str, image_name: str) -> dict[str, Any
     image = project_image_path(project, image_name)
     w, h = image_size(image)
     return {"image": image_name, "width": w, "height": h, "annotation": annotation_for_image(project, image_name)}
-

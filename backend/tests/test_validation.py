@@ -93,6 +93,73 @@ class ValidationTests(unittest.TestCase):
         self.assertEqual(result["status"], "fail")
         self.assertIn("pose_keypoints", {issue["code"] for issue in result["issues"]})
 
+    def test_classify_project_without_labels_is_not_train_ready(self):
+        temp = tempfile.TemporaryDirectory()
+        root = Path(temp.name)
+        image = root / "cat" / "one.jpg"
+        image.parent.mkdir(parents=True, exist_ok=True)
+        make_image(image)
+        project = {
+            "id": "validation-classify",
+            "schema": {
+                "task_type": "classify",
+                "classes": [
+                    {"id": 0, "name": "cat", "color": "#0f766e"},
+                    {"id": 1, "name": "dog", "color": "#d97706"},
+                ],
+            },
+            "task_type": "classify",
+            "image_dir": str(root),
+            "images": [{"name": "cat/one.jpg", "path": str(image), "width": 32, "height": 24}],
+        }
+        with temp:
+            result = validate_project(project)
+        self.assertEqual(result["status"], "pass")
+        self.assertTrue(result["train_ready"])
+
+    def test_obb_project_without_labels_is_not_train_ready(self):
+        temp = tempfile.TemporaryDirectory()
+        root = Path(temp.name)
+        image = root / "one.jpg"
+        make_image(image)
+        label_dir = root / "labels"
+        label_dir.mkdir(parents=True, exist_ok=True)
+        (label_dir / "one.txt").write_text("0 0.1 0.2 0.3 0.2 0.3 0.4 0.1 0.4\n", encoding="utf-8")
+        project = {
+            "id": "validation-obb",
+            "schema": default_schema("obb"),
+            "task_type": "obb",
+            "image_dir": str(root),
+            "label_dir": str(label_dir),
+            "images": [{"name": "one.jpg", "path": str(image), "width": 32, "height": 24}],
+        }
+        with temp:
+            result = validate_project(project)
+        self.assertEqual(result["status"], "pass")
+        self.assertTrue(result["train_ready"])
+
+    def test_obb_project_rejects_out_of_range_corner_points(self):
+        temp = tempfile.TemporaryDirectory()
+        root = Path(temp.name)
+        image = root / "one.jpg"
+        make_image(image)
+        label_dir = root / "labels"
+        label_dir.mkdir(parents=True, exist_ok=True)
+        (label_dir / "one.txt").write_text("0 0.1 0.2 1.3 0.2 0.3 0.4 0.1 0.4\n", encoding="utf-8")
+        project = {
+            "id": "validation-obb-range",
+            "schema": default_schema("obb"),
+            "task_type": "obb",
+            "image_dir": str(root),
+            "label_dir": str(label_dir),
+            "images": [{"name": "one.jpg", "path": str(image), "width": 32, "height": 24}],
+        }
+        with temp:
+            result = validate_project(project)
+        self.assertEqual(result["status"], "fail")
+        self.assertFalse(result["train_ready"])
+        self.assertIn("coordinate_range", {issue["code"] for issue in result["issues"]})
+
 
 if __name__ == "__main__":
     unittest.main()

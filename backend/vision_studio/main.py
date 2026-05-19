@@ -30,7 +30,8 @@ from .storage import (
     write_json,
     yolo_labels_dir,
 )
-from .yolo import annotation_for_image, annotation_to_yolo, default_schema, schema_from_data_yaml
+from .yolo import annotation_for_image, annotation_to_yolo, default_schema, image_has_label, schema_from_data_yaml
+from .tasks import available_tasks, default_schema_for_task, get_task
 from .validation import validate_project
 
 app = FastAPI(title="Vision Studio", version="0.1.0")
@@ -47,7 +48,7 @@ FRONTEND_DIST = REPO_ROOT / "vision_studio" / "frontend" / "dist"
 
 class ImportProjectRequest(BaseModel):
     name: str
-    task_type: str = Field(pattern="^(segment|pose)$")
+    task_type: str = Field(pattern="^(detect|segment|pose|classify|obb)$")
     image_dir: str
     label_dir: str | None = None
     data_yaml: str | None = None
@@ -55,7 +56,7 @@ class ImportProjectRequest(BaseModel):
 
 class CreateProjectRequest(BaseModel):
     name: str
-    task_type: str = Field(pattern="^(segment|pose)$")
+    task_type: str = Field(pattern="^(detect|segment|pose|classify|obb)$")
     project_schema: dict[str, Any] | None = None
 
 
@@ -103,9 +104,15 @@ def get_projects() -> list[dict[str, Any]]:
     return list_projects()
 
 
+@app.get("/api/tasks")
+def get_tasks() -> list[dict[str, Any]]:
+    return available_tasks()
+
+
 @app.post("/api/projects")
 def create_project(req: CreateProjectRequest) -> dict[str, Any]:
     ensure_roots()
+    task = get_task(req.task_type)
     project_id = unique_project_id(req.name)
     pdir = project_dir(project_id)
     for child in ("annotations", "splits", "runs", "exports", "uploads", "yolo_labels"):
@@ -113,15 +120,15 @@ def create_project(req: CreateProjectRequest) -> dict[str, Any]:
 
     schema = req.project_schema or default_schema(req.task_type)
     schema.setdefault("task_type", req.task_type)
-    schema.setdefault("classes", default_schema(req.task_type)["classes"])
-    schema.setdefault("keypoints", default_schema(req.task_type)["keypoints"])
-    schema.setdefault("skeleton", default_schema(req.task_type)["skeleton"])
-    schema.setdefault("flip_idx", default_schema(req.task_type)["flip_idx"])
+    schema.setdefault("classes", default_schema_for_task(req.task_type)["classes"])
+    schema.setdefault("keypoints", default_schema_for_task(req.task_type)["keypoints"])
+    schema.setdefault("skeleton", default_schema_for_task(req.task_type)["skeleton"])
+    schema.setdefault("flip_idx", default_schema_for_task(req.task_type)["flip_idx"])
 
     project = {
         "id": project_id,
         "name": req.name,
-        "task_type": req.task_type,
+        "task_type": task["task_type"],
         "image_dir": str(pdir / "uploads" / "images"),
         "label_dir": None,
         "data_yaml": None,
@@ -137,6 +144,7 @@ def create_project(req: CreateProjectRequest) -> dict[str, Any]:
 @app.post("/api/projects/import")
 def import_project(req: ImportProjectRequest) -> dict[str, Any]:
     ensure_roots()
+    task = get_task(req.task_type)
     image_dir = abs_path(req.image_dir)
     label_dir = abs_path(req.label_dir)
     data_yaml = abs_path(req.data_yaml)
@@ -159,11 +167,11 @@ def import_project(req: ImportProjectRequest) -> dict[str, Any]:
         rel = str(image.relative_to(image_dir)).replace("\\", "/")
         images.append({"name": rel, "path": str(image), "width": w, "height": h, "annotated": False})
 
-    schema = schema_from_data_yaml(data_yaml, req.task_type)
+    schema = schema_from_data_yaml(data_yaml, req.task_type, image_dir=image_dir)
     project = {
         "id": project_id,
         "name": req.name,
-        "task_type": req.task_type,
+        "task_type": task["task_type"],
         "image_dir": str(image_dir),
         "label_dir": str(label_dir) if label_dir else None,
         "data_yaml": str(data_yaml) if data_yaml else None,
@@ -200,9 +208,7 @@ def get_images(project_id: str, offset: int = 0, limit: int = 100) -> dict[str, 
     project = load_project(project_id)
     items = project.get("images", [])
     for item in items:
-        label_path = abs_path(project.get("label_dir"))
-        source_label = label_path / f"{Path(item['name']).stem}.txt" if label_path else None
-        item["annotated"] = annotation_path(project_id, item["name"]).is_file() or bool(source_label and source_label.is_file())
+        item["annotated"] = image_has_label(project, item["name"])
     return {"total": len(items), "items": items[offset : offset + limit]}
 
 

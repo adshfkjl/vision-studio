@@ -178,10 +178,61 @@ p {
   font-size: 18px;
 }
 
+.task-chip-row,
+.task-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.task-chip {
+  background: #eef5f3;
+  border: 1px solid #d8e0dd;
+  border-radius: 999px;
+  color: #33423e;
+  font-size: 12px;
+  padding: 5px 10px;
+}
+
 .project-grid {
   display: grid;
   gap: 10px;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+
+.task-rail {
+  display: grid;
+  gap: 10px;
+}
+
+.task-strip {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.task-card {
+  align-items: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 92px;
+  text-align: left;
+}
+
+.task-card span,
+.task-card small {
+  color: #64748b;
+}
+
+.task-card small {
+  font-size: 11px;
+}
+
+.task-card.selected {
+  border-color: #0f766e;
+  background: #edf7f5;
 }
 
 .project-card {
@@ -428,6 +479,10 @@ p {
   display: grid;
   grid-template-columns: repeat(4, minmax(140px, 1fr));
   gap: 10px;
+}
+
+.grid-4 select {
+  width: 100%;
 }
 
 label {

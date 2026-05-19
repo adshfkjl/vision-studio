@@ -27,6 +27,7 @@ export const apiBase = API_BASE;
 
 export const api = {
   projects: () => request("/api/projects"),
+  tasks: () => request("/api/tasks"),
   createProject: (payload) => request("/api/projects", { method: "POST", body: JSON.stringify(payload) }),
   importProject: (payload) => request("/api/projects/import", { method: "POST", body: JSON.stringify(payload) }),
   importCurrent: () => request("/api/demo/import-current", { method: "POST" }),

@@ -6,6 +6,7 @@ import os
 from .datasets import materialize_dataset
 from .jobs import load_job, update_job
 from .storage import load_project, runs_dir
+from .tasks import default_model_for_task, get_task
 
 
 def main() -> None:
@@ -23,7 +24,8 @@ def main() -> None:
     from ultralytics import YOLO
 
     task_type = params.get("task_type", project["schema"]["task_type"])
-    model_name = params.get("model") or ("yolov8n-seg.pt" if task_type == "segment" else "yolov8n-pose.pt")
+    task = get_task(task_type)
+    model_name = params.get("model") or default_model_for_task(task_type)
     model = YOLO(model_name)
     device = params.get("device", "auto")
     if device == "auto":
@@ -40,7 +42,7 @@ def main() -> None:
         imgsz=int(params.get("imgsz", 960)),
         batch=int(params.get("batch", 4)),
         device=device,
-        project=str((runs_dir(project["id"]) / task_type).resolve()),
+        project=str((runs_dir(project["id"]) / task["task_type"]).resolve()),
         name=params.get("name", "studio_train"),
         exist_ok=True,
         pretrained=True,
