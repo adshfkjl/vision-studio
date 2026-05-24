@@ -206,7 +206,7 @@ function clampZoom(value) {
 
 const PAN_THRESHOLD = 6;
 
-function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, activeClass, tool, activeKeypoint, setActiveKeypoint, zoom }) {
+function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, activeClass, tool, activeKeypoint, setActiveKeypoint, zoom, setZoom }) {
   const svgRef = useRef(null);
   const canvasScrollRef = useRef(null);
   const stageRef = useRef(null);
@@ -378,6 +378,11 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
     }
     const container = canvasScrollRef.current;
     if (!container) return false;
+    if (gesture.undo) {
+      const undo = gesture.undo;
+      gesture.undo = null;
+      undo();
+    }
     evt.currentTarget.setPointerCapture?.(evt.pointerId);
     const nextPanState = {
       pointerId: evt.pointerId,
@@ -422,6 +427,30 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
       evt.currentTarget.setPointerCapture?.(evt.pointerId);
       startCanvasGesture(evt, pt, "svg");
       setHoverPoint(pt);
+      if (schema.task_type === "segment" && tool === "polygon") {
+        const previousLength = draft.length;
+        addPolygonPointAt(pt);
+        if (canvasGestureRef.current) {
+          canvasGestureRef.current.action = "polygon";
+          canvasGestureRef.current.undo = () => setDraft((current) => current.slice(0, previousLength));
+        }
+        return;
+      }
+      if (schema.task_type === "pose" && tool === "keypoint") {
+        const previousAnnotation = annotation;
+        const previousSelected = selected;
+        const previousActiveKeypoint = activeKeypoint;
+        commitKeypointPoint(pt);
+        if (canvasGestureRef.current) {
+          canvasGestureRef.current.action = "keypoint";
+          canvasGestureRef.current.undo = () => {
+            setAnnotation(previousAnnotation);
+            setSelected(previousSelected);
+            setActiveKeypoint(previousActiveKeypoint);
+          };
+        }
+        return;
+      }
     }
   }
 
@@ -484,6 +513,9 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
     if (gesture && gesture.pointerId === evt.pointerId) {
       clearCanvasGesture(evt.pointerId);
       if (gesture.source !== "svg") {
+        return;
+      }
+      if (gesture.action === "polygon" || gesture.action === "keypoint") {
         return;
       }
       const pt = pointToSvg(evt, svgRef.current);
@@ -1233,7 +1265,7 @@ function AnnotatePage(props) {
           <span className={`save-state ${saveState}`}>{saveState === "dirty" ? "未保存" : saveState === "saving" ? "保存中" : "已保存"}</span>
         </div>
         {schema && selectedProject ? (
-          <AnnotationCanvas project={selectedProject} image={selectedImage} schema={schema} annotation={annotation} setAnnotation={setAnnotation} activeClass={activeClass} tool={tool} activeKeypoint={activeKeypoint} setActiveKeypoint={setActiveKeypoint} zoom={zoom} />
+          <AnnotationCanvas project={selectedProject} image={selectedImage} schema={schema} annotation={annotation} setAnnotation={setAnnotation} activeClass={activeClass} tool={tool} activeKeypoint={activeKeypoint} setActiveKeypoint={setActiveKeypoint} zoom={zoom} setZoom={setZoom} />
         ) : (
           <div className="empty-state"><ImageIcon size={32} /><strong>还没有打开项目</strong><span>请先到“数据”页面导入或上传图片。</span></div>
         )}
