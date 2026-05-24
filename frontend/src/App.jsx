@@ -203,7 +203,10 @@ function nextKeypoint(schema, current) {
 function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, activeClass, tool, activeKeypoint, setActiveKeypoint, zoom }) {
   const svgRef = useRef(null);
   const [draft, setDraft] = useState([]);
+  const [hoverPoint, setHoverPoint] = useState(null);
+  const [draftBoxStart, setDraftBoxStart] = useState(null);
   const [draftBox, setDraftBox] = useState(null);
+  const [keypointPreviewEnabled, setKeypointPreviewEnabled] = useState(true);
   const [selected, setSelected] = useState(null);
   const [drag, setDrag] = useState(null);
   const [liveAnnotation, setLiveAnnotation] = useState(null);
@@ -215,10 +218,23 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
     setSelected(null);
     setDrag(null);
     setDraft([]);
+    setHoverPoint(null);
+    setDraftBoxStart(null);
     setDraftBox(null);
+    setKeypointPreviewEnabled(true);
     setLiveAnnotation(null);
     setContextMenu(null);
   }, [image?.name]);
+
+  useEffect(() => {
+    setDrag(null);
+    setDraft([]);
+    setHoverPoint(null);
+    setDraftBoxStart(null);
+    setDraftBox(null);
+    setKeypointPreviewEnabled(true);
+    setContextMenu(null);
+  }, [tool, schema.task_type]);
 
   function normalizedBox(start, end) {
     const minX = Math.min(start.x, end.x);
@@ -254,8 +270,19 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
 
   function selectOnly(next) {
     setSelected(next);
+    setDraftBoxStart(null);
     setDraftBox(null);
     setContextMenu(null);
+  }
+
+  function clearDraftState({ suppressKeypointPreview = false } = {}) {
+    setDrag(null);
+    setLiveAnnotation(null);
+    setDraft([]);
+    setHoverPoint(null);
+    setDraftBoxStart(null);
+    setDraftBox(null);
+    if (suppressKeypointPreview) setKeypointPreviewEnabled(false);
   }
 
   function addPolygonPoint(evt) {
@@ -270,19 +297,54 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
       instances: [...(annotation?.instances || []), { type: "polygon", class_id: Number(activeClass), points: draft }],
     });
     setDraft([]);
+    setHoverPoint(null);
   }
+
+  useEffect(() => {
+    function onKeyDown(evt) {
+      const tag = evt.target?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return;
+      if (schema.task_type === "segment" && tool === "polygon" && evt.code === "Space") {
+        evt.preventDefault();
+        finishPolygon();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [schema.task_type, tool, draft.length]);
 
   function handlePointerDown(evt) {
     if (!svgRef.current) return;
     if (evt.button === 2) return;
+    setContextMenu(null);
     const pt = pointToSvg(evt, svgRef.current);
     if ((schema.task_type === "pose" || schema.task_type === "detect") && tool === "bbox") {
       setSelected(null);
-      setDrag({ type: "create-bbox", start: pt, current: pt });
-      setDraftBox(normalizedBox(pt, pt));
+      if (!draftBoxStart) {
+        setDraftBoxStart(pt);
+        setDraftBox(normalizedBox(pt, pt));
+      } else {
+        const bbox = normalizedBox(draftBoxStart, pt);
+        if (bbox.w > 0.004 && bbox.h > 0.004) {
+          const inst = schema.task_type === "detect"
+            ? { type: "box", class_id: Number(activeClass), bbox }
+            : {
+              type: "pose",
+              class_id: Number(activeClass),
+              bbox,
+              keypoints: schema.keypoints.map((name) => ({ name, x: 0, y: 0, v: 0 })),
+            };
+          const nextIndex = (annotation?.instances || []).length;
+          setAnnotation({ ...annotation, instances: [...(annotation?.instances || []), inst] });
+          setSelected({ type: "bbox", instanceIndex: nextIndex, key: "bbox" });
+        }
+        setDraftBoxStart(null);
+        setDraftBox(null);
+      }
       return;
     }
     if (schema.task_type === "pose" && tool === "keypoint") {
+      setKeypointPreviewEnabled(true);
       const targetIndex =
         (annotation?.instances || []).findIndex((inst) => inst.type === "pose" && pointInBox(pt, inst.bbox));
       if (targetIndex >= 0) {
@@ -304,8 +366,13 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
   }
 
   function handlePointerMove(evt) {
-    if (!svgRef.current || !drag) return;
+    if (!svgRef.current) return;
     const pt = pointToSvg(evt, svgRef.current);
+    setHoverPoint(pt);
+    if (draftBoxStart && (schema.task_type === "pose" || schema.task_type === "detect") && tool === "bbox") {
+      setDraftBox(normalizedBox(draftBoxStart, pt));
+    }
+    if (!drag) return;
     if (drag.type === "create-bbox") {
       setDraftBox(normalizedBox(drag.start, pt));
       setDrag({ ...drag, current: pt });
@@ -336,24 +403,6 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
 
   function handlePointerUp(evt) {
     if (!drag) return;
-    if (drag.type === "create-bbox") {
-      const end = pointToSvg(evt, svgRef.current);
-      const bbox = normalizedBox(drag.start, end);
-      if (bbox.w > 0.004 && bbox.h > 0.004) {
-        const inst = schema.task_type === "detect"
-          ? { type: "box", class_id: Number(activeClass), bbox }
-          : {
-            type: "pose",
-            class_id: Number(activeClass),
-            bbox,
-            keypoints: schema.keypoints.map((name) => ({ name, x: 0, y: 0, v: 0 })),
-          };
-        const nextIndex = (annotation?.instances || []).length;
-        setAnnotation({ ...annotation, instances: [...(annotation?.instances || []), inst] });
-        setSelected({ type: "bbox", instanceIndex: nextIndex, key: "bbox" });
-      }
-      setDraftBox(null);
-    }
     if (liveAnnotation && drag.type !== "create-bbox") {
       setAnnotation(liveAnnotation);
       setLiveAnnotation(null);
@@ -421,7 +470,7 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
     evt.preventDefault();
     evt.stopPropagation();
     selectOnly(target);
-    setContextMenu({ target, x: evt.clientX, y: evt.clientY });
+    setContextMenu({ kind: "selection", target, x: evt.clientX, y: evt.clientY });
   }
 
   function movePoint(instanceIndex, pointIndex, evt) {
@@ -432,19 +481,13 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
     startKeypointDrag(instanceIndex, name, evt);
   }
 
-  /*
-    Keypoint placement is intentionally conservative: an empty click only places
-    the active keypoint when a bbox is already selected and that keypoint is not
-    visible yet. Existing points and boxes require selection + drag.
-  */
   function handleCanvasContextMenu(evt) {
     evt.preventDefault();
+    evt.stopPropagation();
+    const hasDraft = Boolean(draft.length || draftBoxStart || draftBox || (schema.task_type === "pose" && tool === "keypoint"));
+    if (!hasDraft) return;
+    setContextMenu({ kind: "draft", x: evt.clientX, y: evt.clientY });
   }
-
-  /*
-    Keep segment polygon creation unchanged except for selected point dragging,
-    because the requested change is about pose keypoints and boxes.
-  */
 
   if (!image) {
     return <div className="empty-state"><ImageIcon size={32} />选择一张图片开始标注</div>;
@@ -457,23 +500,51 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
     <div className="canvas-scroll">
       {contextMenu && (
         <div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
-          <div className="context-menu-item" onClick={() => deleteSelection(contextMenu.target)}>删除</div>
+          {contextMenu.kind === "selection" ? (
+            <div className="context-menu-item" onClick={() => deleteSelection(contextMenu.target)}>删除</div>
+          ) : (
+            <>
+              <div
+                className="context-menu-item"
+                onClick={() => {
+                  clearDraftState({ suppressKeypointPreview: true });
+                  setContextMenu(null);
+                }}
+              >
+                取消当前标注
+              </div>
+              <div
+                className="context-menu-item"
+                onClick={() => {
+                  clearDraftState({ suppressKeypointPreview: true });
+                  if (schema.task_type === "pose" && tool === "keypoint") {
+                    setTool("bbox");
+                  }
+                  setContextMenu(null);
+                }}
+              >
+                退出当前模式
+              </div>
+            </>
+          )}
         </div>
       )}
       <div className="image-stage" style={{ width: stageWidth, aspectRatio: `${image.width} / ${image.height}` }}>
         <img src={src} className="canvas-img" alt={image.name} draggable={false} />
-        <svg
-          ref={svgRef}
-          className="canvas-svg"
-          viewBox="0 0 1 1"
-          preserveAspectRatio="none"
+          <svg
+            ref={svgRef}
+            className="canvas-svg"
+            viewBox="0 0 1 1"
+            preserveAspectRatio="none"
           onDoubleClick={finishPolygon}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
+          onPointerLeave={() => setHoverPoint(null)}
           onPointerCancel={() => {
             setDrag(null);
-            setDraftBox(null);
+            setHoverPoint(null);
+            setLiveAnnotation(null);
           }}
           onContextMenu={handleCanvasContextMenu}
         >
@@ -563,7 +634,43 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
               </g>
             );
           })}
-          {draft.length > 0 && <polyline points={draft.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke="#f59e0b" strokeWidth="0.001" />}
+          {schema.task_type === "pose" && tool === "keypoint" && keypointPreviewEnabled && hoverPoint && activeKeypoint && (
+            <g pointerEvents="none">
+              <circle cx={hoverPoint.x} cy={hoverPoint.y} r="0.008" fill="none" stroke="#111827" strokeOpacity="0.22" strokeWidth="0.0015" />
+              <circle
+                cx={hoverPoint.x}
+                cy={hoverPoint.y}
+                r="0.005"
+                fill={keypointColor(schema, activeKeypoint)}
+                fillOpacity="0.35"
+                stroke="#ffffff"
+                strokeWidth="0.0015"
+              />
+            </g>
+          )}
+          {draft.length > 0 && (
+            <g>
+              <polyline
+                points={[...draft, ...(hoverPoint ? [hoverPoint] : [])].map((p) => `${p.x},${p.y}`).join(" ")}
+                fill="none"
+                stroke="#f59e0b"
+                strokeWidth="0.001"
+              />
+              {hoverPoint && draft.length >= 2 && (
+                <line
+                  x1={hoverPoint.x}
+                  y1={hoverPoint.y}
+                  x2={draft[0].x}
+                  y2={draft[0].y}
+                  stroke="#f59e0b"
+                  strokeOpacity="0.45"
+                  strokeWidth="0.001"
+                  strokeDasharray="0.006 0.004"
+                />
+              )}
+              {draft.map((p, idx) => <circle key={idx} cx={p.x} cy={p.y} r="0.004" fill="#ffffff" stroke="#f59e0b" strokeWidth="0.001" />)}
+            </g>
+          )}
           {draftBox && (
             <rect
               x={draftBox.cx - draftBox.w / 2}
@@ -857,7 +964,7 @@ function ProjectOverview({ project, validation, setPage }) {
   );
 }
 
-function ProjectDataPage({ selectedProject, refreshProjects, setMessage }) {
+function ProjectDataPage({ selectedProject, refreshProjects, refreshProjectData, setMessage }) {
   const [files, setFiles] = useState([]);
   const [actionStatus, setActionStatus] = useState("");
 
@@ -868,6 +975,7 @@ function ProjectDataPage({ selectedProject, refreshProjects, setMessage }) {
     setActionStatus(`已上传 ${files.length} 张图片到“${selectedProject.name}”。`);
     setMessage("图片已上传");
     await refreshProjects(selectedProject.id);
+    await refreshProjectData(selectedProject.id).catch(() => null);
   }
 
   return (
@@ -1203,26 +1311,19 @@ export default function App() {
     }
   }
 
-  async function refreshTasks() {
-    try {
-      const loaded = await api.tasks();
-      setTasks(loaded);
-    } catch (err) {
-      setTasks(Object.values(TASK_FALLBACKS));
-      setMessage(`任务列表加载失败，已使用本地默认值：${err.message}`);
-    }
-  }
-
-  async function refreshProjectData(projectId = selectedProjectId) {
+  async function refreshProjectData(projectId = selectedProjectId, options = {}) {
     if (!projectId) return;
+    const { preserveTool = false } = options;
     const [imgData, schemaData, validationData] = await Promise.all([api.images(projectId), api.schema(projectId), api.validation(projectId).catch(() => null)]);
     setImages(imgData.items);
     setSchema(schemaData);
     setValidation(validationData);
     setActiveClass(schemaData.classes?.[0]?.id ?? 0);
-    setActiveKeypoint(schemaData.keypoints?.[0] || "");
     setSelectedImageName((current) => imgData.items.some((img) => img.name === current) ? current : imgData.items[0]?.name || "");
-    setTool(schemaData.task_type === "pose" || schemaData.task_type === "detect" ? "bbox" : "polygon");
+    if (!preserveTool) {
+      setActiveKeypoint(schemaData.keypoints?.[0] || "");
+      setTool(schemaData.task_type === "pose" || schemaData.task_type === "detect" ? "bbox" : "polygon");
+    }
   }
 
   useEffect(() => {
@@ -1276,7 +1377,7 @@ export default function App() {
     setLoadedSignature(annotationSignature(annotation));
     setSaveState("saved");
     setMessage("标注已保存");
-    await refreshProjectData(selectedProject.id);
+    await refreshProjectData(selectedProject.id, { preserveTool: true });
     await refreshValidation(selectedProject.id).catch(() => null);
   }
 
@@ -1414,7 +1515,7 @@ export default function App() {
           </nav>
           <main className="page-main workspace-main">
             {page === "overview" && <ProjectOverview project={selectedProject} validation={validation} setPage={setPage} />}
-            {page === "data" && <ProjectDataPage selectedProject={selectedProject} refreshProjects={refreshProjects} setMessage={setMessage} />}
+            {page === "data" && <ProjectDataPage selectedProject={selectedProject} refreshProjects={refreshProjects} refreshProjectData={refreshProjectData} setMessage={setMessage} />}
             {page === "labels" && schema && <SchemaPanel schema={schema} setSchema={setSchema} selectedProject={selectedProject} />}
             {page === "annotate" && canAnnotateInStation && (
               <AnnotatePage

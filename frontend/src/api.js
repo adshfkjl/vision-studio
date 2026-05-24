@@ -1,7 +1,12 @@
-const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
+const RAW_API_BASE = import.meta.env.VITE_API_BASE?.trim() || "";
+const API_BASE = RAW_API_BASE.replace(/\/+$/, "");
+
+function apiPath(path) {
+  return `${API_BASE}${path}`;
+}
 
 async function request(path, options = {}) {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetch(apiPath(path), {
     headers: { "Content-Type": "application/json", ...(options.headers || {}) },
     ...options,
   });
@@ -15,7 +20,7 @@ async function request(path, options = {}) {
 async function uploadRequest(path, files) {
   const body = new FormData();
   files.forEach((file) => body.append("files", file));
-  const response = await fetch(`${API_BASE}${path}`, { method: "POST", body });
+  const response = await fetch(apiPath(path), { method: "POST", body });
   if (!response.ok) {
     const text = await response.text();
     throw new Error(text || response.statusText);
@@ -23,7 +28,7 @@ async function uploadRequest(path, files) {
   return response.json();
 }
 
-export const apiBase = API_BASE;
+export const apiBase = API_BASE || "same-origin";
 
 export const api = {
   projects: () => request("/api/projects"),
@@ -50,9 +55,9 @@ export const api = {
 };
 
 export function imageUrl(projectId, imageName) {
-  return `${API_BASE}/api/projects/${projectId}/images/${encodeURIComponent(imageName)}`;
+  return apiPath(`/api/projects/${projectId}/images/${encodeURIComponent(imageName)}`);
 }
 
 export function artifactUrl(jobId, artifactName) {
-  return `${API_BASE}/api/artifacts/${jobId}/${encodeURIComponent(artifactName)}`;
+  return apiPath(`/api/artifacts/${jobId}/${encodeURIComponent(artifactName)}`);
 }

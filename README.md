@@ -31,7 +31,15 @@ npm install
 
 Open `http://localhost:5173`.
 
+If Vite picks another free port such as `5174`, that is fine now. The frontend sends API requests to the current origin by default and the dev server proxies `/api` to the backend.
+
 Use the import form to add any absolute dataset path, or place demo data under this project as `images`, `labels`, and `yolo-pose/data.yaml`, then call `POST /api/demo/import-current`.
+
+Environment variables:
+
+- `VISION_STUDIO_API_PROXY_TARGET`: backend target for the frontend dev proxy, default `http://127.0.0.1:8000`
+- `VISION_STUDIO_CORS_ORIGINS`: comma-separated CORS allowlist for direct browser access; default `*`
+- `VITE_API_BASE`: optional absolute API base URL when you do not want to use the relative-path default
 
 ## Working Rule
 

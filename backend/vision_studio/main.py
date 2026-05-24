@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from .config import cors_allow_origins
 from .datasets import materialize_dataset, materialize_preview, split_project
 from .jobs import export_onnx, load_job, start_training
 from .storage import (
@@ -37,8 +38,8 @@ from .validation import validate_project
 app = FastAPI(title="Vision Studio", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_credentials=True,
+    allow_origins=cors_allow_origins(),
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
