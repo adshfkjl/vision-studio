@@ -548,11 +548,16 @@ label {
   flex: 1;
   background: #17211f;
   border-radius: 8px;
-  cursor: grab;
   user-select: none;
   overscroll-behavior: contain;
   overflow: auto;
   padding: 24px;
+}
+
+.canvas-scroll.tool-bbox,
+.canvas-scroll.tool-polygon,
+.canvas-scroll.tool-keypoint {
+  cursor: crosshair;
 }
 
 .canvas-scroll.panning {

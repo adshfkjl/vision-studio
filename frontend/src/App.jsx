@@ -377,6 +377,7 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
       !gesture ||
       gesture.pointerId !== evt.pointerId ||
       panState ||
+      gesture.action === "bbox-start" ||
       (Math.abs(evt.clientX - gesture.startX) <= PAN_THRESHOLD && Math.abs(evt.clientY - gesture.startY) <= PAN_THRESHOLD)
     ) {
       return false;
@@ -435,6 +436,15 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
     if (evt.button === 2) return;
     setContextMenu(null);
     const pt = pointToSvg(evt, svgRef.current);
+    if ((schema.task_type === "pose" || schema.task_type === "detect") && tool === "bbox" && !draftBoxStart) {
+      setSelected(null);
+      setDraftBoxStart(pt);
+      setDraftBox(normalizedBox(pt, pt));
+      if (canvasGestureRef.current) {
+        canvasGestureRef.current.action = "bbox-start";
+      }
+      return;
+    }
     if (schema.task_type === "segment" && tool === "polygon") {
       const previousLength = draft.length;
       addPolygonPointAt(pt);
@@ -520,6 +530,9 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
     if (gesture && gesture.pointerId === evt.pointerId) {
       clearCanvasGesture(evt.pointerId);
       if (gesture.source !== "canvas") {
+        return;
+      }
+      if (gesture.action === "bbox-start") {
         return;
       }
       if (gesture.action === "polygon" || gesture.action === "keypoint") {
@@ -691,7 +704,7 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
 
   return (
     <div
-      className={`canvas-scroll ${panState ? "panning" : ""}`}
+      className={`canvas-scroll tool-${tool} ${panState ? "panning" : ""}`}
       ref={canvasScrollRef}
       onPointerDownCapture={handleCanvasPointerDownCapture}
       onPointerMove={updatePan}
