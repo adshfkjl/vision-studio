@@ -204,7 +204,7 @@ function clampZoom(value) {
   return Math.min(4, Math.max(0.25, Number(value.toFixed(2))));
 }
 
-const PAN_THRESHOLD = 6;
+const PAN_THRESHOLD = 12;
 
 function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, activeClass, tool, activeKeypoint, setActiveKeypoint, zoom, setZoom }) {
   const svgRef = useRef(null);
