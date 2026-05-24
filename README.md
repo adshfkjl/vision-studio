@@ -9,6 +9,13 @@ cd <path-to>\vision_studio
 .\run_backend.ps1
 ```
 
+If port `8000` is already occupied:
+
+```powershell
+$env:VISION_STUDIO_PORT = "8010"
+.\run_backend.ps1
+```
+
 If dependencies need to be recreated:
 
 ```powershell
@@ -37,9 +44,18 @@ Use the import form to add any absolute dataset path, or place demo data under t
 
 Environment variables:
 
+- `VISION_STUDIO_HOST`: backend host, default `127.0.0.1`
+- `VISION_STUDIO_PORT`: backend port, default `8000`
 - `VISION_STUDIO_API_PROXY_TARGET`: backend target for the frontend dev proxy, default `http://127.0.0.1:8000`
 - `VISION_STUDIO_CORS_ORIGINS`: comma-separated CORS allowlist for direct browser access; default `*`
 - `VITE_API_BASE`: optional absolute API base URL when you do not want to use the relative-path default
+
+When using a custom backend port with the Vite frontend, point the dev proxy at the same port before starting the frontend:
+
+```powershell
+$env:VISION_STUDIO_API_PROXY_TARGET = "http://127.0.0.1:8010"
+.\run_frontend.ps1
+```
 
 ## Working Rule
 
