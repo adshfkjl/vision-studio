@@ -366,6 +366,11 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
     };
   }
 
+  function isCanvasHandleTarget(target) {
+    if (!(target instanceof Element)) return false;
+    return Boolean(target.closest('[data-canvas-handle="true"], .context-menu'));
+  }
+
   function maybeStartPan(evt) {
     const gesture = canvasGestureRef.current;
     if (
@@ -393,6 +398,13 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
     };
     setPanState(nextPanState);
     return nextPanState;
+  }
+
+  function handleCanvasPointerDownCapture(evt) {
+    if (evt.button !== 0 || !svgRef.current) return;
+    if (isCanvasHandleTarget(evt.target)) return;
+    evt.currentTarget.setPointerCapture?.(evt.pointerId);
+    startCanvasGesture(evt, pointToSvg(evt, svgRef.current), "canvas");
   }
 
   function finishPolygon() {
@@ -423,34 +435,29 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
     if (evt.button === 2) return;
     setContextMenu(null);
     const pt = pointToSvg(evt, svgRef.current);
-    if (evt.target === svgRef.current && canvasScrollRef.current) {
-      evt.currentTarget.setPointerCapture?.(evt.pointerId);
-      startCanvasGesture(evt, pt, "svg");
-      setHoverPoint(pt);
-      if (schema.task_type === "segment" && tool === "polygon") {
-        const previousLength = draft.length;
-        addPolygonPointAt(pt);
-        if (canvasGestureRef.current) {
-          canvasGestureRef.current.action = "polygon";
-          canvasGestureRef.current.undo = () => setDraft((current) => current.slice(0, previousLength));
-        }
-        return;
+    if (schema.task_type === "segment" && tool === "polygon") {
+      const previousLength = draft.length;
+      addPolygonPointAt(pt);
+      if (canvasGestureRef.current) {
+        canvasGestureRef.current.action = "polygon";
+        canvasGestureRef.current.undo = () => setDraft((current) => current.slice(0, previousLength));
       }
-      if (schema.task_type === "pose" && tool === "keypoint") {
-        const previousAnnotation = annotation;
-        const previousSelected = selected;
-        const previousActiveKeypoint = activeKeypoint;
-        commitKeypointPoint(pt);
-        if (canvasGestureRef.current) {
-          canvasGestureRef.current.action = "keypoint";
-          canvasGestureRef.current.undo = () => {
-            setAnnotation(previousAnnotation);
-            setSelected(previousSelected);
-            setActiveKeypoint(previousActiveKeypoint);
-          };
-        }
-        return;
+      return;
+    }
+    if (schema.task_type === "pose" && tool === "keypoint") {
+      const previousAnnotation = annotation;
+      const previousSelected = selected;
+      const previousActiveKeypoint = activeKeypoint;
+      commitKeypointPoint(pt);
+      if (canvasGestureRef.current) {
+        canvasGestureRef.current.action = "keypoint";
+        canvasGestureRef.current.undo = () => {
+          setAnnotation(previousAnnotation);
+          setSelected(previousSelected);
+          setActiveKeypoint(previousActiveKeypoint);
+        };
       }
+      return;
     }
   }
 
@@ -512,7 +519,7 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
     const gesture = canvasGestureRef.current;
     if (gesture && gesture.pointerId === evt.pointerId) {
       clearCanvasGesture(evt.pointerId);
-      if (gesture.source !== "svg") {
+      if (gesture.source !== "canvas") {
         return;
       }
       if (gesture.action === "polygon" || gesture.action === "keypoint") {
@@ -620,6 +627,7 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
     const stage = stageRef.current;
     if (!container || !stage) return;
     evt.preventDefault();
+    evt.stopPropagation();
 
     const factor = evt.deltaY > 0 ? 0.9 : 1.1;
     const nextZoom = clampZoom(zoom * factor);
@@ -640,14 +648,6 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
       container.scrollLeft += pointX - cursorX;
       container.scrollTop += pointY - cursorY;
     });
-  }
-
-  function startPan(evt) {
-    const container = canvasScrollRef.current;
-    if (!container || evt.button !== 0) return;
-    if (evt.target !== canvasScrollRef.current) return;
-    evt.currentTarget.setPointerCapture?.(evt.pointerId);
-    startCanvasGesture(evt, pointToSvg(evt, svgRef.current), "padding");
   }
 
   function updatePan(evt) {
@@ -686,8 +686,9 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
     <div
       className={`canvas-scroll ${panState ? "panning" : ""}`}
       ref={canvasScrollRef}
+      onWheelCapture={handleWheel}
       onWheel={handleWheel}
-      onPointerDown={startPan}
+      onPointerDownCapture={handleCanvasPointerDownCapture}
       onPointerMove={updatePan}
       onPointerUp={endPan}
       onPointerCancel={endPan}
@@ -763,6 +764,7 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
                           fill="#ffffff"
                           stroke={selectedPoint ? "#f59e0b" : color}
                           strokeWidth="0.001"
+                          data-canvas-handle="true"
                           onPointerDown={(evt) => movePoint(instanceIndex, pointIndex, evt)}
                           onContextMenu={(evt) => handleContextMenu({ type: "polygon-point", instanceIndex, key: pointIndex }, evt)}
                         />
@@ -797,6 +799,7 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
                   fill="transparent"
                   stroke={color}
                   strokeWidth="0.001"
+                  data-canvas-handle="true"
                   onPointerDown={(evt) => startBboxDrag(instanceIndex, box, evt)}
                   onContextMenu={(evt) => handleContextMenu({ type: "bbox", instanceIndex, key: "bbox" }, evt)}
                 />
@@ -821,6 +824,7 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
                         fill={kpColor}
                         stroke="#ffffff"
                         strokeWidth="0.0015"
+                        data-canvas-handle="true"
                         onPointerDown={(evt) => moveKeypoint(instanceIndex, name, evt)}
                         onContextMenu={(evt) => handleContextMenu({ type: "keypoint", instanceIndex, key: name }, evt)}
                       />

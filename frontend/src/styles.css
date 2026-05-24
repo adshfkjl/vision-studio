@@ -550,6 +550,7 @@ label {
   border-radius: 8px;
   cursor: grab;
   user-select: none;
+  overscroll-behavior: contain;
   overflow: auto;
   padding: 24px;
 }
