@@ -40,6 +40,8 @@ Open `http://localhost:5173`.
 
 If Vite picks another free port such as `5174`, that is fine now. The frontend sends API requests to the current origin by default and the dev server proxies `/api` to the backend.
 
+On the annotation canvas, use the mouse wheel to zoom around the cursor and hold the left button to pan the image. Click-based marking still works on the canvas itself.
+
 Use the import form to add any absolute dataset path, or place demo data under this project as `images`, `labels`, and `yolo-pose/data.yaml`, then call `POST /api/demo/import-current`.
 
 Environment variables:

@@ -548,8 +548,21 @@ label {
   flex: 1;
   background: #17211f;
   border-radius: 8px;
+  cursor: grab;
+  user-select: none;
   overflow: auto;
   padding: 24px;
+}
+
+.canvas-scroll.panning {
+  cursor: grabbing;
+}
+
+.image-stage,
+.canvas-img,
+.canvas-svg,
+.canvas-svg * {
+  cursor: inherit;
 }
 
 .context-menu {

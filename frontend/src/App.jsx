@@ -200,8 +200,17 @@ function nextKeypoint(schema, current) {
   return keypoints[(index + 1) % keypoints.length] || keypoints[0];
 }
 
+function clampZoom(value) {
+  return Math.min(4, Math.max(0.25, Number(value.toFixed(2))));
+}
+
+const PAN_THRESHOLD = 6;
+
 function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, activeClass, tool, activeKeypoint, setActiveKeypoint, zoom }) {
   const svgRef = useRef(null);
+  const canvasScrollRef = useRef(null);
+  const stageRef = useRef(null);
+  const canvasGestureRef = useRef(null);
   const [draft, setDraft] = useState([]);
   const [hoverPoint, setHoverPoint] = useState(null);
   const [draftBoxStart, setDraftBoxStart] = useState(null);
@@ -209,14 +218,17 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
   const [keypointPreviewEnabled, setKeypointPreviewEnabled] = useState(true);
   const [selected, setSelected] = useState(null);
   const [drag, setDrag] = useState(null);
+  const [panState, setPanState] = useState(null);
   const [liveAnnotation, setLiveAnnotation] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
   const src = image ? imageUrl(project.id, image.name) : "";
   const displayAnnotation = liveAnnotation || annotation;
 
   useEffect(() => {
+    canvasGestureRef.current = null;
     setSelected(null);
     setDrag(null);
+    setPanState(null);
     setDraft([]);
     setHoverPoint(null);
     setDraftBoxStart(null);
@@ -227,7 +239,9 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
   }, [image?.name]);
 
   useEffect(() => {
+    canvasGestureRef.current = null;
     setDrag(null);
+    setPanState(null);
     setDraft([]);
     setHoverPoint(null);
     setDraftBoxStart(null);
@@ -285,9 +299,95 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
     if (suppressKeypointPreview) setKeypointPreviewEnabled(false);
   }
 
-  function addPolygonPoint(evt) {
+  function addPolygonPointAt(pt) {
     if (tool !== "polygon" || schema.task_type !== "segment") return;
-    setDraft((current) => [...current, pointToSvg(evt, svgRef.current)]);
+    setDraft((current) => [...current, pt]);
+  }
+
+  function commitKeypointPoint(pt) {
+    if (schema.task_type !== "pose" || tool !== "keypoint") return;
+    setKeypointPreviewEnabled(true);
+    const targetIndex =
+      (annotation?.instances || []).findIndex((inst) => inst.type === "pose" && pointInBox(pt, inst.bbox));
+    if (targetIndex < 0) return;
+    const instances = JSON.parse(JSON.stringify(annotation?.instances || []));
+    const inst = instances[targetIndex];
+    if (!inst) return;
+    inst.keypoints = schema.keypoints.map((name) => {
+      const existing = (inst.keypoints || []).find((p) => p.name === name) || { name, x: 0, y: 0, v: 0 };
+      return name === activeKeypoint ? { name, x: pt.x, y: pt.y, v: 2 } : existing;
+    });
+    setAnnotation({ ...annotation, instances });
+    setSelected({ type: "keypoint", instanceIndex: targetIndex, key: activeKeypoint });
+    setActiveKeypoint(nextKeypoint(schema, activeKeypoint));
+  }
+
+  function commitBboxPoint(pt) {
+    if (schema.task_type !== "pose" && schema.task_type !== "detect") return;
+    if (tool !== "bbox") return;
+    setSelected(null);
+    if (!draftBoxStart) {
+      setDraftBoxStart(pt);
+      setDraftBox(normalizedBox(pt, pt));
+      return;
+    }
+    const bbox = normalizedBox(draftBoxStart, pt);
+    if (bbox.w > 0.004 && bbox.h > 0.004) {
+      const inst = schema.task_type === "detect"
+        ? { type: "box", class_id: Number(activeClass), bbox }
+        : {
+          type: "pose",
+          class_id: Number(activeClass),
+          bbox,
+          keypoints: schema.keypoints.map((name) => ({ name, x: 0, y: 0, v: 0 })),
+        };
+      const nextIndex = (annotation?.instances || []).length;
+      setAnnotation({ ...annotation, instances: [...(annotation?.instances || []), inst] });
+      setSelected({ type: "bbox", instanceIndex: nextIndex, key: "bbox" });
+    }
+    setDraftBoxStart(null);
+    setDraftBox(null);
+  }
+
+  function clearCanvasGesture(pointerId) {
+    const gesture = canvasGestureRef.current;
+    if (gesture && gesture.pointerId === pointerId) {
+      canvasGestureRef.current = null;
+    }
+  }
+
+  function startCanvasGesture(evt, pt, source = "svg") {
+    canvasGestureRef.current = {
+      pointerId: evt.pointerId,
+      startX: evt.clientX,
+      startY: evt.clientY,
+      startPt: pt,
+      source,
+    };
+  }
+
+  function maybeStartPan(evt) {
+    const gesture = canvasGestureRef.current;
+    if (
+      !gesture ||
+      gesture.pointerId !== evt.pointerId ||
+      panState ||
+      (Math.abs(evt.clientX - gesture.startX) <= PAN_THRESHOLD && Math.abs(evt.clientY - gesture.startY) <= PAN_THRESHOLD)
+    ) {
+      return false;
+    }
+    const container = canvasScrollRef.current;
+    if (!container) return false;
+    evt.currentTarget.setPointerCapture?.(evt.pointerId);
+    const nextPanState = {
+      pointerId: evt.pointerId,
+      startX: gesture.startX,
+      startY: gesture.startY,
+      scrollLeft: container.scrollLeft,
+      scrollTop: container.scrollTop,
+    };
+    setPanState(nextPanState);
+    return nextPanState;
   }
 
   function finishPolygon() {
@@ -318,56 +418,29 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
     if (evt.button === 2) return;
     setContextMenu(null);
     const pt = pointToSvg(evt, svgRef.current);
-    if ((schema.task_type === "pose" || schema.task_type === "detect") && tool === "bbox") {
-      setSelected(null);
-      if (!draftBoxStart) {
-        setDraftBoxStart(pt);
-        setDraftBox(normalizedBox(pt, pt));
-      } else {
-        const bbox = normalizedBox(draftBoxStart, pt);
-        if (bbox.w > 0.004 && bbox.h > 0.004) {
-          const inst = schema.task_type === "detect"
-            ? { type: "box", class_id: Number(activeClass), bbox }
-            : {
-              type: "pose",
-              class_id: Number(activeClass),
-              bbox,
-              keypoints: schema.keypoints.map((name) => ({ name, x: 0, y: 0, v: 0 })),
-            };
-          const nextIndex = (annotation?.instances || []).length;
-          setAnnotation({ ...annotation, instances: [...(annotation?.instances || []), inst] });
-          setSelected({ type: "bbox", instanceIndex: nextIndex, key: "bbox" });
-        }
-        setDraftBoxStart(null);
-        setDraftBox(null);
-      }
-      return;
+    if (evt.target === svgRef.current && canvasScrollRef.current) {
+      evt.currentTarget.setPointerCapture?.(evt.pointerId);
+      startCanvasGesture(evt, pt, "svg");
+      setHoverPoint(pt);
     }
-    if (schema.task_type === "pose" && tool === "keypoint") {
-      setKeypointPreviewEnabled(true);
-      const targetIndex =
-        (annotation?.instances || []).findIndex((inst) => inst.type === "pose" && pointInBox(pt, inst.bbox));
-      if (targetIndex >= 0) {
-        const instances = JSON.parse(JSON.stringify(annotation?.instances || []));
-        const inst = instances[targetIndex];
-        if (inst) {
-          inst.keypoints = schema.keypoints.map((name) => {
-            const existing = (inst.keypoints || []).find((p) => p.name === name) || { name, x: 0, y: 0, v: 0 };
-            return name === activeKeypoint ? { name, x: pt.x, y: pt.y, v: 2 } : existing;
-          });
-          setAnnotation({ ...annotation, instances });
-          setSelected({ type: "keypoint", instanceIndex: targetIndex, key: activeKeypoint });
-          setActiveKeypoint(nextKeypoint(schema, activeKeypoint));
-        }
-      }
-      return;
-    }
-    addPolygonPoint(evt);
   }
 
   function handlePointerMove(evt) {
     if (!svgRef.current) return;
     const pt = pointToSvg(evt, svgRef.current);
+    const startedPan = maybeStartPan(evt);
+    if (startedPan && canvasScrollRef.current) {
+      canvasScrollRef.current.scrollLeft = startedPan.scrollLeft - (evt.clientX - startedPan.startX);
+      canvasScrollRef.current.scrollTop = startedPan.scrollTop - (evt.clientY - startedPan.startY);
+      setHoverPoint(null);
+      return;
+    }
+    if (panState && canvasScrollRef.current && panState.pointerId === evt.pointerId) {
+      canvasScrollRef.current.scrollLeft = panState.scrollLeft - (evt.clientX - panState.startX);
+      canvasScrollRef.current.scrollTop = panState.scrollTop - (evt.clientY - panState.startY);
+      setHoverPoint(null);
+      return;
+    }
     setHoverPoint(pt);
     if (draftBoxStart && (schema.task_type === "pose" || schema.task_type === "detect") && tool === "bbox") {
       setDraftBox(normalizedBox(draftBoxStart, pt));
@@ -402,6 +475,27 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
   }
 
   function handlePointerUp(evt) {
+    if (panState && panState.pointerId === evt.pointerId) {
+      setPanState(null);
+      clearCanvasGesture(evt.pointerId);
+      return;
+    }
+    const gesture = canvasGestureRef.current;
+    if (gesture && gesture.pointerId === evt.pointerId) {
+      clearCanvasGesture(evt.pointerId);
+      if (gesture.source !== "svg") {
+        return;
+      }
+      const pt = pointToSvg(evt, svgRef.current);
+      if ((schema.task_type === "pose" || schema.task_type === "detect") && tool === "bbox") {
+        commitBboxPoint(pt);
+      } else if (schema.task_type === "pose" && tool === "keypoint") {
+        commitKeypointPoint(pt);
+      } else {
+        addPolygonPointAt(pt);
+      }
+      return;
+    }
     if (!drag) return;
     if (liveAnnotation && drag.type !== "create-bbox") {
       setAnnotation(liveAnnotation);
@@ -489,6 +583,66 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
     setContextMenu({ kind: "draft", x: evt.clientX, y: evt.clientY });
   }
 
+  function handleWheel(evt) {
+    const container = canvasScrollRef.current;
+    const stage = stageRef.current;
+    if (!container || !stage) return;
+    evt.preventDefault();
+
+    const factor = evt.deltaY > 0 ? 0.9 : 1.1;
+    const nextZoom = clampZoom(zoom * factor);
+    if (nextZoom === zoom) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const stageRect = stage.getBoundingClientRect();
+    const xRatio = (evt.clientX - stageRect.left) / stageRect.width;
+    const yRatio = (evt.clientY - stageRect.top) / stageRect.height;
+    const cursorX = evt.clientX - containerRect.left;
+    const cursorY = evt.clientY - containerRect.top;
+
+    setZoom(nextZoom);
+    requestAnimationFrame(() => {
+      const nextStageRect = stage.getBoundingClientRect();
+      const pointX = nextStageRect.left - containerRect.left + xRatio * nextStageRect.width;
+      const pointY = nextStageRect.top - containerRect.top + yRatio * nextStageRect.height;
+      container.scrollLeft += pointX - cursorX;
+      container.scrollTop += pointY - cursorY;
+    });
+  }
+
+  function startPan(evt) {
+    const container = canvasScrollRef.current;
+    if (!container || evt.button !== 0) return;
+    if (evt.target !== canvasScrollRef.current) return;
+    evt.currentTarget.setPointerCapture?.(evt.pointerId);
+    startCanvasGesture(evt, pointToSvg(evt, svgRef.current), "padding");
+  }
+
+  function updatePan(evt) {
+    if (evt.target !== canvasScrollRef.current) return;
+    if (!panState || panState.pointerId !== evt.pointerId) {
+      const startedPan = maybeStartPan(evt);
+      if (startedPan && canvasScrollRef.current) {
+        canvasScrollRef.current.scrollLeft = startedPan.scrollLeft - (evt.clientX - startedPan.startX);
+        canvasScrollRef.current.scrollTop = startedPan.scrollTop - (evt.clientY - startedPan.startY);
+        return;
+      }
+    }
+    if (!panState || panState.pointerId !== evt.pointerId) return;
+    const container = canvasScrollRef.current;
+    if (!container) return;
+    const dx = evt.clientX - panState.startX;
+    const dy = evt.clientY - panState.startY;
+    container.scrollLeft = panState.scrollLeft - dx;
+    container.scrollTop = panState.scrollTop - dy;
+  }
+
+  function endPan(evt) {
+    clearCanvasGesture(evt.pointerId);
+    if (!panState || panState.pointerId !== evt.pointerId) return;
+    setPanState(null);
+  }
+
   if (!image) {
     return <div className="empty-state"><ImageIcon size={32} />选择一张图片开始标注</div>;
   }
@@ -497,7 +651,15 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
   const stageWidth = Math.round(baseWidth * zoom);
 
   return (
-    <div className="canvas-scroll">
+    <div
+      className={`canvas-scroll ${panState ? "panning" : ""}`}
+      ref={canvasScrollRef}
+      onWheel={handleWheel}
+      onPointerDown={startPan}
+      onPointerMove={updatePan}
+      onPointerUp={endPan}
+      onPointerCancel={endPan}
+    >
       {contextMenu && (
         <div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
           {contextMenu.kind === "selection" ? (
@@ -529,7 +691,7 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
           )}
         </div>
       )}
-      <div className="image-stage" style={{ width: stageWidth, aspectRatio: `${image.width} / ${image.height}` }}>
+      <div ref={stageRef} className="image-stage" style={{ width: stageWidth, aspectRatio: `${image.width} / ${image.height}` }}>
         <img src={src} className="canvas-img" alt={image.name} draggable={false} />
           <svg
             ref={svgRef}
@@ -541,7 +703,9 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerLeave={() => setHoverPoint(null)}
-          onPointerCancel={() => {
+          onPointerCancel={(evt) => {
+            setPanState(null);
+            clearCanvasGesture(evt.pointerId);
             setDrag(null);
             setHoverPoint(null);
             setLiveAnnotation(null);
