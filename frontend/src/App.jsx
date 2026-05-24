@@ -651,7 +651,6 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
   }
 
   function updatePan(evt) {
-    if (evt.target !== canvasScrollRef.current) return;
     if (!panState || panState.pointerId !== evt.pointerId) {
       const startedPan = maybeStartPan(evt);
       if (startedPan && canvasScrollRef.current) {
@@ -675,6 +674,14 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
     setPanState(null);
   }
 
+  useEffect(() => {
+    const container = canvasScrollRef.current;
+    if (!container) return undefined;
+    const onNativeWheel = (evt) => handleWheel(evt);
+    container.addEventListener("wheel", onNativeWheel, { passive: false });
+    return () => container.removeEventListener("wheel", onNativeWheel);
+  }, [zoom]);
+
   if (!image) {
     return <div className="empty-state"><ImageIcon size={32} />选择一张图片开始标注</div>;
   }
@@ -686,8 +693,6 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
     <div
       className={`canvas-scroll ${panState ? "panning" : ""}`}
       ref={canvasScrollRef}
-      onWheelCapture={handleWheel}
-      onWheel={handleWheel}
       onPointerDownCapture={handleCanvasPointerDownCapture}
       onPointerMove={updatePan}
       onPointerUp={endPan}
