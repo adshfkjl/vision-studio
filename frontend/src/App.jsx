@@ -6,6 +6,7 @@ import {
   FolderInput,
   GitBranch,
   Image as ImageIcon,
+  Move,
   MousePointer2,
   Plus,
   Save,
@@ -290,6 +291,8 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
   }
 
   function clearDraftState({ suppressKeypointPreview = false } = {}) {
+    canvasGestureRef.current = null;
+    setPanState(null);
     setDrag(null);
     setLiveAnnotation(null);
     setDraft([]);
@@ -404,8 +407,33 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
   function handleCanvasPointerDownCapture(evt) {
     if (evt.button !== 0 || !svgRef.current) return;
     if (isCanvasHandleTarget(evt.target)) return;
-    evt.currentTarget.setPointerCapture?.(evt.pointerId);
     startCanvasGesture(evt, pointToSvg(evt, svgRef.current), "canvas");
+  }
+
+  function handleCanvasPointerMove(evt) {
+    if (evt.target !== evt.currentTarget) return;
+    const startedPan = maybeStartPan(evt);
+    if (startedPan && canvasScrollRef.current) {
+      canvasScrollRef.current.scrollLeft = startedPan.scrollLeft - (evt.clientX - startedPan.startX);
+      canvasScrollRef.current.scrollTop = startedPan.scrollTop - (evt.clientY - startedPan.startY);
+      setHoverPoint(null);
+      return;
+    }
+    if (!panState || panState.pointerId !== evt.pointerId) return;
+    const container = canvasScrollRef.current;
+    if (!container) return;
+    const dx = evt.clientX - panState.startX;
+    const dy = evt.clientY - panState.startY;
+    container.scrollLeft = panState.scrollLeft - dx;
+    container.scrollTop = panState.scrollTop - dy;
+    setHoverPoint(null);
+  }
+
+  function handleCanvasPointerEnd(evt) {
+    if (evt.target !== evt.currentTarget) return;
+    clearCanvasGesture(evt.pointerId);
+    if (!panState || panState.pointerId !== evt.pointerId) return;
+    setPanState(null);
   }
 
   function finishPolygon() {
@@ -434,6 +462,7 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
   function handlePointerDown(evt) {
     if (!svgRef.current) return;
     if (evt.button === 2) return;
+    if (tool === "mouse") return;
     setContextMenu(null);
     const pt = pointToSvg(evt, svgRef.current);
     if ((schema.task_type === "pose" || schema.task_type === "detect") && tool === "bbox" && !draftBoxStart) {
@@ -538,6 +567,9 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
       if (gesture.action === "polygon" || gesture.action === "keypoint") {
         return;
       }
+      if (tool === "mouse") {
+        return;
+      }
       const pt = pointToSvg(evt, svgRef.current);
       if ((schema.task_type === "pose" || schema.task_type === "detect") && tool === "bbox") {
         commitBboxPoint(pt);
@@ -557,6 +589,7 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
   }
 
   function startKeypointDrag(instanceIndex, name, evt) {
+    if (tool === "mouse") return;
     evt.stopPropagation();
     evt.currentTarget.setPointerCapture?.(evt.pointerId);
     selectOnly({ type: "keypoint", instanceIndex, key: name });
@@ -564,6 +597,7 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
   }
 
   function startPolygonPointDrag(instanceIndex, pointIndex, evt) {
+    if (tool === "mouse") return;
     evt.stopPropagation();
     evt.currentTarget.setPointerCapture?.(evt.pointerId);
     selectOnly({ type: "polygon-point", instanceIndex, key: pointIndex });
@@ -571,6 +605,7 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
   }
 
   function startBboxDrag(instanceIndex, box, evt) {
+    if (tool === "mouse") return;
     evt.stopPropagation();
     if (schema.task_type === "pose" && tool === "keypoint") {
       const pt = pointToSvg(evt, svgRef.current);
@@ -663,30 +698,6 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
     });
   }
 
-  function updatePan(evt) {
-    if (!panState || panState.pointerId !== evt.pointerId) {
-      const startedPan = maybeStartPan(evt);
-      if (startedPan && canvasScrollRef.current) {
-        canvasScrollRef.current.scrollLeft = startedPan.scrollLeft - (evt.clientX - startedPan.startX);
-        canvasScrollRef.current.scrollTop = startedPan.scrollTop - (evt.clientY - startedPan.startY);
-        return;
-      }
-    }
-    if (!panState || panState.pointerId !== evt.pointerId) return;
-    const container = canvasScrollRef.current;
-    if (!container) return;
-    const dx = evt.clientX - panState.startX;
-    const dy = evt.clientY - panState.startY;
-    container.scrollLeft = panState.scrollLeft - dx;
-    container.scrollTop = panState.scrollTop - dy;
-  }
-
-  function endPan(evt) {
-    clearCanvasGesture(evt.pointerId);
-    if (!panState || panState.pointerId !== evt.pointerId) return;
-    setPanState(null);
-  }
-
   useEffect(() => {
     const container = canvasScrollRef.current;
     if (!container) return undefined;
@@ -707,9 +718,9 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
       className={`canvas-scroll tool-${tool} ${panState ? "panning" : ""}`}
       ref={canvasScrollRef}
       onPointerDownCapture={handleCanvasPointerDownCapture}
-      onPointerMove={updatePan}
-      onPointerUp={endPan}
-      onPointerCancel={endPan}
+      onPointerMove={handleCanvasPointerMove}
+      onPointerUp={handleCanvasPointerEnd}
+      onPointerCancel={handleCanvasPointerEnd}
     >
       {contextMenu && (
         <div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
@@ -730,9 +741,7 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
                 className="context-menu-item"
                 onClick={() => {
                   clearDraftState({ suppressKeypointPreview: true });
-                  if (schema.task_type === "pose" && tool === "keypoint") {
-                    setTool("bbox");
-                  }
+                  setTool("mouse");
                   setContextMenu(null);
                 }}
               >
@@ -1263,9 +1272,13 @@ function AnnotatePage(props) {
             {(schema?.classes || []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
           {schema?.task_type === "segment" ? (
-            <button className={tool === "polygon" ? "active" : ""} onClick={() => setTool("polygon")}><MousePointer2 size={15} />多边形</button>
+            <>
+              <button className={tool === "mouse" ? "active" : ""} onClick={() => setTool("mouse")}><Move size={15} />鼠标</button>
+              <button className={tool === "polygon" ? "active" : ""} onClick={() => setTool("polygon")}><MousePointer2 size={15} />多边形</button>
+            </>
           ) : (
             <>
+              <button className={tool === "mouse" ? "active" : ""} onClick={() => setTool("mouse")}><Move size={15} />鼠标</button>
               <button className={tool === "bbox" ? "active" : ""} onClick={() => setTool("bbox")}><BoxSelect size={15} />框</button>
               <button className={tool === "keypoint" ? "active" : ""} onClick={() => setTool("keypoint")}><MousePointer2 size={15} />关键点</button>
               <select value={activeKeypoint} onChange={(e) => setActiveKeypoint(e.target.value)}>
