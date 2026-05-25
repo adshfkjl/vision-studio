@@ -67,6 +67,10 @@ def exports_dir(project_id: str) -> Path:
     return project_dir(project_id) / "exports"
 
 
+def predictions_dir() -> Path:
+    return DATA_ROOT / "predictions"
+
+
 def abs_path(path_text: str | None, base: Path = APP_ROOT) -> Path | None:
     if not path_text:
         return None

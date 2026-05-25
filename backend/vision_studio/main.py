@@ -12,7 +12,8 @@ from pydantic import BaseModel, Field
 
 from .config import cors_allow_origins
 from .datasets import materialize_dataset, materialize_preview, split_project
-from .jobs import export_onnx, load_job, start_training
+from .inference import resolve_image_path, resolve_model_path, run_prediction
+from .jobs import export_onnx, list_jobs, load_job, start_training
 from .storage import (
     APP_ROOT,
     DATA_ROOT,
@@ -26,6 +27,7 @@ from .storage import (
     load_project,
     project_dir,
     project_image_path,
+    predictions_dir,
     save_project,
     unique_project_id,
     write_json,
@@ -82,6 +84,19 @@ class TrainRequest(BaseModel):
     name: str = "studio_train"
 
 
+class PredictRequest(BaseModel):
+    project_id: str | None = None
+    image_name: str | None = None
+    image_path: str | None = None
+    model_path: str | None = None
+    job_id: str | None = None
+    artifact_name: str | None = None
+    conf: float = 0.25
+    iou: float = 0.7
+    imgsz: int | None = None
+    device: str = "auto"
+
+
 @app.on_event("startup")
 def startup() -> None:
     ensure_roots()
@@ -103,6 +118,11 @@ def frontend_index() -> FileResponse:
 @app.get("/api/projects")
 def get_projects() -> list[dict[str, Any]]:
     return list_projects()
+
+
+@app.get("/api/jobs")
+def get_jobs(project_id: str | None = None, kind: str | None = None) -> dict[str, Any]:
+    return {"items": list_jobs(project_id=project_id, kind=kind)}
 
 
 @app.get("/api/tasks")
@@ -311,6 +331,37 @@ def post_export_onnx(job_id: str) -> dict[str, Any]:
         return export_onnx(job_id)
     except FileNotFoundError as exc:
         raise HTTPException(404, str(exc)) from exc
+
+
+@app.post("/api/predict")
+def post_predict(req: PredictRequest) -> dict[str, Any]:
+    try:
+        model_path = resolve_model_path(req.model_path, req.job_id, req.artifact_name)
+        image_path = resolve_image_path(req.project_id, req.image_name, req.image_path)
+        schema = load_project(req.project_id)["schema"] if req.project_id else None
+        result = run_prediction(
+            model_path,
+            image_path,
+            conf=req.conf,
+            iou=req.iou,
+            imgsz=req.imgsz,
+            device=req.device,
+            schema=schema,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    preview_name = Path(result["preview_path"]).name
+    return {**result, "preview_url": f"/api/predictions/{preview_name}"}
+
+
+@app.get("/api/predictions/{preview_name}")
+def get_prediction_preview(preview_name: str) -> FileResponse:
+    path = predictions_dir() / Path(preview_name).name
+    if not path.is_file():
+        raise HTTPException(404, "Prediction preview not found")
+    return FileResponse(path, filename=path.name)
 
 
 @app.get("/api/artifacts/{job_id}/{artifact_name}")

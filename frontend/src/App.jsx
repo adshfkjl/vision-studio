@@ -18,7 +18,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { api, apiBase, artifactUrl, imageUrl } from "./api.js";
+import { api, apiBase, apiUrl, artifactUrl, imageUrl } from "./api.js";
 
 const blankImport = {
   name: "current-pose",
@@ -1492,6 +1492,224 @@ function TrainingPage({ project, schema, tasks, validation, refreshValidation, s
   );
 }
 
+function ModelWorkbench({ projects, selectedProjectId, setSelectedProjectId, setMessage }) {
+  const [projectId, setProjectId] = useState(selectedProjectId || "");
+  const [images, setImages] = useState([]);
+  const [jobs, setJobs] = useState([]);
+  const [modelSource, setModelSource] = useState("artifact");
+  const [imageSource, setImageSource] = useState("project");
+  const [artifactKey, setArtifactKey] = useState("");
+  const [modelPath, setModelPath] = useState("");
+  const [imageName, setImageName] = useState("");
+  const [imagePath, setImagePath] = useState("");
+  const [params, setParams] = useState({ conf: 0.25, iou: 0.7, imgsz: 960, device: "auto" });
+  const [result, setResult] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const modelArtifacts = useMemo(() => {
+    return jobs.flatMap((job) =>
+      Object.entries(job.artifacts || {})
+        .filter(([name]) => name.endsWith(".pt") || name.endsWith(".onnx"))
+        .map(([name, meta]) => ({
+          key: `${job.id}::${name}`,
+          jobId: job.id,
+          name,
+          label: `${job.params?.name || job.id} / ${name}`,
+          size: meta?.size || 0,
+        }))
+    );
+  }, [jobs]);
+
+  useEffect(() => {
+    if (!projectId) {
+      setImages([]);
+      setJobs([]);
+      setArtifactKey("");
+      setImageName("");
+      return;
+    }
+    let cancelled = false;
+    Promise.all([api.images(projectId), api.jobs(projectId, "train")])
+      .then(([imageData, jobData]) => {
+        if (cancelled) return;
+        setImages(imageData.items || []);
+        setJobs(jobData.items || []);
+        setImageName((current) => (imageData.items || []).some((img) => img.name === current) ? current : imageData.items?.[0]?.name || "");
+      })
+      .catch((err) => setMessage(err.message));
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!artifactKey && modelArtifacts.length) {
+      setArtifactKey(modelArtifacts[0].key);
+    }
+  }, [artifactKey, modelArtifacts]);
+
+  async function runPredict() {
+    setBusy(true);
+    setResult(null);
+    try {
+      const payload = {
+        conf: Number(params.conf),
+        iou: Number(params.iou),
+        imgsz: Number(params.imgsz) || null,
+        device: params.device || "auto",
+      };
+      if (modelSource === "artifact") {
+        const artifact = modelArtifacts.find((item) => item.key === artifactKey);
+        if (!artifact) throw new Error("请选择训练产物，或切换为本地模型路径。");
+        payload.job_id = artifact.jobId;
+        payload.artifact_name = artifact.name;
+      } else {
+        payload.model_path = modelPath;
+      }
+      if (imageSource === "project") {
+        if (!projectId || !imageName) throw new Error("请选择项目图片，或切换为本地图片路径。");
+        payload.project_id = projectId;
+        payload.image_name = imageName;
+      } else {
+        payload.image_path = imagePath;
+      }
+      const next = await api.predict(payload);
+      setResult(next);
+      setMessage("预测完成");
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const selectedProject = projects.find((project) => project.id === projectId);
+  const canRun = (modelSource === "path" ? modelPath : artifactKey) && (imageSource === "path" ? imagePath : projectId && imageName);
+
+  return (
+    <section className="model-page workflow">
+      <div className="center-hero model-hero">
+        <div>
+          <span className="eyebrow">Model Workbench</span>
+          <h2>模型工作台</h2>
+          <p>独立于项目标注与训练流程，用训练产物或本地模型做单图预测。</p>
+        </div>
+        <div className="hero-metrics">
+          <span><b>{projects.length}</b>项目</span>
+          <span><b>{modelArtifacts.length}</b>可用产物</span>
+          <span><b>{result?.summary?.total ?? "-"}</b>预测目标</span>
+        </div>
+      </div>
+
+      <div className="prediction-layout">
+        <section className="panel workflow">
+          <h2><Brain size={16} />预测配置</h2>
+          <div className="workflow-step">
+            <div>
+              <strong>1. 选择模型</strong>
+              <span>训练产物会从所选项目的 completed train job 中读取；也可以输入本地 .pt 或 .onnx。</span>
+            </div>
+          </div>
+          <div className="grid-4">
+            <label>项目
+              <select value={projectId} onChange={(e) => { setProjectId(e.target.value); setSelectedProjectId(e.target.value); }}>
+                <option value="">选择项目</option>
+                {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+              </select>
+            </label>
+            <label>模型来源
+              <select value={modelSource} onChange={(e) => setModelSource(e.target.value)}>
+                <option value="artifact">训练产物</option>
+                <option value="path">本地模型路径</option>
+              </select>
+            </label>
+            {modelSource === "artifact" ? (
+              <label>训练产物
+                <select value={artifactKey} onChange={(e) => setArtifactKey(e.target.value)}>
+                  <option value="">选择 best.pt / last.pt / onnx</option>
+                  {modelArtifacts.map((artifact) => <option key={artifact.key} value={artifact.key}>{artifact.label}</option>)}
+                </select>
+              </label>
+            ) : (
+              <label>模型路径
+                <input value={modelPath} onChange={(e) => setModelPath(e.target.value)} placeholder="D:\models\best.pt" />
+              </label>
+            )}
+            <label>Device
+              <input value={params.device} onChange={(e) => setParams({ ...params, device: e.target.value })} />
+            </label>
+          </div>
+
+          <div className="workflow-step">
+            <div>
+              <strong>2. 选择图片</strong>
+              <span>{selectedProject ? `当前图片来自 ${selectedProject.name}` : "可选择项目图片，也可输入后端可访问的本地图片路径。"}</span>
+            </div>
+          </div>
+          <div className="grid-4">
+            <label>图片来源
+              <select value={imageSource} onChange={(e) => setImageSource(e.target.value)}>
+                <option value="project">项目图片</option>
+                <option value="path">本地图片路径</option>
+              </select>
+            </label>
+            {imageSource === "project" ? (
+              <label>图片
+                <select value={imageName} onChange={(e) => setImageName(e.target.value)}>
+                  <option value="">选择图片</option>
+                  {images.map((image) => <option key={image.name} value={image.name}>{image.name}</option>)}
+                </select>
+              </label>
+            ) : (
+              <label>图片路径
+                <input value={imagePath} onChange={(e) => setImagePath(e.target.value)} placeholder="D:\images\sample.jpg" />
+              </label>
+            )}
+            <label>Conf
+              <input type="number" min="0" max="1" step="0.01" value={params.conf} onChange={(e) => setParams({ ...params, conf: Number(e.target.value) })} />
+            </label>
+            <label>IoU
+              <input type="number" min="0" max="1" step="0.01" value={params.iou} onChange={(e) => setParams({ ...params, iou: Number(e.target.value) })} />
+            </label>
+            <label>Imgsz
+              <input type="number" value={params.imgsz} onChange={(e) => setParams({ ...params, imgsz: Number(e.target.value) })} />
+            </label>
+          </div>
+          <div className="button-row">
+            <button className="primary" onClick={runPredict} disabled={!canRun || busy}><ImageIcon size={15} />{busy ? "预测中" : "开始预测"}</button>
+          </div>
+        </section>
+
+        <section className="panel prediction-results">
+          <h2><ImageIcon size={16} />预测结果</h2>
+          {!result ? (
+            <div className="empty-state"><ImageIcon size={32} />等待预测结果</div>
+          ) : (
+            <>
+              <div className="prediction-preview">
+                <img src={apiUrl(result.preview_url)} alt="预测结果预览" />
+              </div>
+              <div className="metric-row">
+                <span><b>{result.summary?.total || 0}</b>目标</span>
+                <span><b>{Object.keys(result.summary?.by_class || {}).length}</b>类别</span>
+              </div>
+              <div className="result-list">
+                {(result.instances || []).map((inst, idx) => (
+                  <div className="result-row" key={`${inst.class_name}-${idx}`}>
+                    <strong>{inst.class_name}</strong>
+                    <span>{Math.round((inst.confidence || 0) * 100)}%</span>
+                  </div>
+                ))}
+              </div>
+              <pre>{JSON.stringify(result.summary || {}, null, 2)}</pre>
+            </>
+          )}
+        </section>
+      </div>
+    </section>
+  );
+}
+
 export default function App() {
   const [page, setPage] = useState("projects");
   const [navOpen, setNavOpen] = useState(true);
@@ -1699,9 +1917,21 @@ export default function App() {
           <h1>Vision Studio</h1>
           <p>{selectedProject ? `当前项目：${selectedProject.name}` : "项目优先的本地图像标注、训练与导出工作台"}</p>
         </div>
-        <div className="api-pill">{apiBase}</div>
+        <div className="header-actions">
+          {page === "models" ? (
+            <button onClick={() => setPage(selectedProject ? "overview" : "projects")}>返回{selectedProject ? "项目" : "项目中心"}</button>
+          ) : (
+            <button onClick={() => setPage("models")}><Brain size={15} />模型工作台</button>
+          )}
+          <div className="api-pill">{apiBase}</div>
+        </div>
       </header>
-      {!selectedProject ? (
+      {page === "models" ? (
+        <main className="project-shell">
+          <ModelWorkbench projects={projects} selectedProjectId={selectedProjectId} setSelectedProjectId={setSelectedProjectId} setMessage={setMessage} />
+          {message && <p className="global-message">{message}</p>}
+        </main>
+      ) : !selectedProject ? (
         <main className="project-shell">
           <ProjectCenter
             projects={projects}

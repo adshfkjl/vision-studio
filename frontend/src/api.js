@@ -33,6 +33,7 @@ export const apiBase = API_BASE || "same-origin";
 export const api = {
   projects: () => request("/api/projects"),
   tasks: () => request("/api/tasks"),
+  jobs: (projectId, kind = "") => request(`/api/jobs?project_id=${encodeURIComponent(projectId)}${kind ? `&kind=${encodeURIComponent(kind)}` : ""}`),
   createProject: (payload) => request("/api/projects", { method: "POST", body: JSON.stringify(payload) }),
   importProject: (payload) => request("/api/projects/import", { method: "POST", body: JSON.stringify(payload) }),
   importCurrent: () => request("/api/demo/import-current", { method: "POST" }),
@@ -50,6 +51,7 @@ export const api = {
   split: (projectId, payload) => request(`/api/projects/${projectId}/split`, { method: "POST", body: JSON.stringify(payload) }),
   materialize: (projectId) => request(`/api/projects/${projectId}/materialize`, { method: "POST" }),
   train: (projectId, payload) => request(`/api/projects/${projectId}/train`, { method: "POST", body: JSON.stringify(payload) }),
+  predict: (payload) => request("/api/predict", { method: "POST", body: JSON.stringify(payload) }),
   job: (jobId) => request(`/api/jobs/${jobId}`),
   exportOnnx: (jobId) => request(`/api/jobs/${jobId}/export/onnx`, { method: "POST" }),
 };
@@ -60,4 +62,8 @@ export function imageUrl(projectId, imageName) {
 
 export function artifactUrl(jobId, artifactName) {
   return apiPath(`/api/artifacts/${jobId}/${encodeURIComponent(artifactName)}`);
+}
+
+export function apiUrl(path) {
+  return apiPath(path);
 }

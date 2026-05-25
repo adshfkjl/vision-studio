@@ -46,6 +46,22 @@ def load_job(job_id: str) -> dict[str, Any]:
     return job
 
 
+def list_jobs(project_id: str | None = None, kind: str | None = None) -> list[dict[str, Any]]:
+    jobs: list[dict[str, Any]] = []
+    if not JOBS_ROOT.is_dir():
+        return jobs
+    for path in JOBS_ROOT.glob("*/job.json"):
+        job = read_json(path)
+        if not job:
+            continue
+        if project_id and job.get("project_id") != project_id:
+            continue
+        if kind and job.get("kind") != kind:
+            continue
+        jobs.append(job)
+    return sorted(jobs, key=lambda item: item.get("updated_at") or item.get("created_at") or 0, reverse=True)
+
+
 def update_job(job_id: str, **fields: Any) -> None:
     job = read_json(job_path(job_id))
     if not job:

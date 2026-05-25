@@ -1,6 +1,7 @@
 # Vision Studio
 
 Local FastAPI + React workspace for image annotation, dataset splitting, YOLO training, and model export.
+The app also includes a standalone model workbench for running single-image predictions with trained artifacts or local `.pt` / `.onnx` models.
 
 ## Backend
 
@@ -41,6 +42,8 @@ Open `http://localhost:5173`.
 If Vite picks another free port such as `5174`, that is fine now. The frontend sends API requests to the current origin by default and the dev server proxies `/api` to the backend.
 
 On the annotation canvas, use the mouse wheel to zoom around the cursor and hold the left button to pan the image. Click-based marking still works on the canvas itself.
+
+Use the `模型工作台` button in the top bar to run prediction outside the project annotation/training tabs. Select a project to reuse its trained `best.pt`, `last.pt`, or exported ONNX artifacts, or switch to a local model path. Prediction can run against a project image or an image path that the backend can access.
 
 Use the import form to add any absolute dataset path, or place demo data under this project as `images`, `labels`, and `yolo-pose/data.yaml`, then call `POST /api/demo/import-current`.
 
