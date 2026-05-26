@@ -206,6 +206,32 @@ function clampZoom(value) {
 }
 
 const PAN_THRESHOLD = 12;
+const BBOX_MIN_SIZE = 0.006;
+const BBOX_HANDLE_RADIUS = 0.006;
+const BBOX_BORDER_HIT = 0.01;
+const BBOX_RESIZE_HANDLES = [
+  { handle: "nw", cursor: "nwse-resize" },
+  { handle: "n", cursor: "ns-resize" },
+  { handle: "ne", cursor: "nesw-resize" },
+  { handle: "e", cursor: "ew-resize" },
+  { handle: "se", cursor: "nwse-resize" },
+  { handle: "s", cursor: "ns-resize" },
+  { handle: "sw", cursor: "nesw-resize" },
+  { handle: "w", cursor: "ew-resize" },
+];
+
+function clamp01(value) {
+  return Math.min(1, Math.max(0, value));
+}
+
+function handleEdges(handle) {
+  return {
+    north: handle === "n" || handle === "ne" || handle === "nw",
+    east: handle === "e" || handle === "ne" || handle === "se",
+    south: handle === "s" || handle === "se" || handle === "sw",
+    west: handle === "w" || handle === "nw" || handle === "sw",
+  };
+}
 
 function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, activeClass, tool, activeKeypoint, setActiveKeypoint, zoom, setZoom }) {
   const svgRef = useRef(null);
@@ -274,6 +300,45 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
     };
   }
 
+  function resizeBox(startBox, startPt, currentPt, handle) {
+    let left = startBox.cx - startBox.w / 2;
+    let right = startBox.cx + startBox.w / 2;
+    let top = startBox.cy - startBox.h / 2;
+    let bottom = startBox.cy + startBox.h / 2;
+    const dx = currentPt.x - startPt.x;
+    const dy = currentPt.y - startPt.y;
+    const edges = handleEdges(handle);
+
+    if (edges.west) left = clamp01(left + dx);
+    if (edges.east) right = clamp01(right + dx);
+    if (edges.north) top = clamp01(top + dy);
+    if (edges.south) bottom = clamp01(bottom + dy);
+
+    if (edges.west && right - left < BBOX_MIN_SIZE) left = Math.max(0, right - BBOX_MIN_SIZE);
+    if (edges.east && right - left < BBOX_MIN_SIZE) right = Math.min(1, left + BBOX_MIN_SIZE);
+    if (edges.north && bottom - top < BBOX_MIN_SIZE) top = Math.max(0, bottom - BBOX_MIN_SIZE);
+    if (edges.south && bottom - top < BBOX_MIN_SIZE) bottom = Math.min(1, top + BBOX_MIN_SIZE);
+
+    return clampBox({
+      cx: (left + right) / 2,
+      cy: (top + bottom) / 2,
+      w: Math.max(BBOX_MIN_SIZE, right - left),
+      h: Math.max(BBOX_MIN_SIZE, bottom - top),
+    });
+  }
+
+  function bboxResizePoint(box, handle) {
+    const left = box.cx - box.w / 2;
+    const right = box.cx + box.w / 2;
+    const top = box.cy - box.h / 2;
+    const bottom = box.cy + box.h / 2;
+    const edges = handleEdges(handle);
+    return {
+      x: edges.west ? left : edges.east ? right : box.cx,
+      y: edges.north ? top : edges.south ? bottom : box.cy,
+    };
+  }
+
   function isSelected(type, instanceIndex, key) {
     return selected?.type === type && selected.instanceIndex === instanceIndex && selected.key === key;
   }
@@ -281,6 +346,22 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
   function pointInBox(pt, box) {
     if (!box) return false;
     return pt.x >= box.cx - box.w / 2 && pt.x <= box.cx + box.w / 2 && pt.y >= box.cy - box.h / 2 && pt.y <= box.cy + box.h / 2;
+  }
+
+  function clearSelectedBboxIfOutside(pt, evt) {
+    if (tool !== "bbox" || selected?.type !== "bbox" || drag || evt.buttons !== 0) return;
+    if (isCanvasHandleTarget(evt.target)) return;
+    const selectedInst = displayAnnotation?.instances?.[selected.instanceIndex];
+    const box = selectedInst?.bbox;
+    if (box && !pointInBox(pt, box)) {
+      setSelected(null);
+    }
+  }
+
+  function clearSelectedBboxOnLeave(evt) {
+    if (tool === "bbox" && selected?.type === "bbox" && !drag && evt.buttons === 0) {
+      setSelected(null);
+    }
   }
 
   function selectOnly(next) {
@@ -517,6 +598,7 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
       return;
     }
     setHoverPoint(pt);
+    clearSelectedBboxIfOutside(pt, evt);
     if (draftBoxStart && (schema.task_type === "pose" || schema.task_type === "detect") && tool === "bbox") {
       setDraftBox(normalizedBox(draftBoxStart, pt));
     }
@@ -539,6 +621,12 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
     }
     if (drag.type === "polygon-point") {
       instances[drag.instanceIndex].points[drag.pointIndex] = pt;
+      setLiveAnnotation({ ...source, instances });
+      return;
+    }
+    if (drag.type === "bbox-resize") {
+      const inst = instances[drag.instanceIndex];
+      inst.bbox = resizeBox(drag.startBox, drag.start, pt, drag.handle);
       setLiveAnnotation({ ...source, instances });
       return;
     }
@@ -625,6 +713,15 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
     evt.currentTarget.setPointerCapture?.(evt.pointerId);
     selectOnly({ type: "bbox", instanceIndex, key: "bbox" });
     setDrag({ type: "bbox", instanceIndex, start: pointToSvg(evt, svgRef.current), startBox: { ...box } });
+  }
+
+  function startBboxResize(instanceIndex, box, handle, evt) {
+    if (evt.button !== 0) return;
+    if (tool !== "bbox") return;
+    evt.stopPropagation();
+    evt.currentTarget.setPointerCapture?.(evt.pointerId);
+    selectOnly({ type: "bbox", instanceIndex, key: "bbox" });
+    setDrag({ type: "bbox-resize", instanceIndex, handle, start: pointToSvg(evt, svgRef.current), startBox: { ...box } });
   }
 
   function deleteSelection(target) {
@@ -762,7 +859,10 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
-          onPointerLeave={() => setHoverPoint(null)}
+          onPointerLeave={(evt) => {
+            setHoverPoint(null);
+            clearSelectedBboxOnLeave(evt);
+          }}
           onPointerCancel={(evt) => {
             setPanState(null);
             clearCanvasGesture(evt.pointerId);
@@ -830,6 +930,43 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
                   onPointerDown={(evt) => startBboxDrag(instanceIndex, box, evt)}
                   onContextMenu={(evt) => handleContextMenu({ type: "bbox", instanceIndex, key: "bbox" }, evt)}
                 />
+                <rect
+                  x={box.cx - box.w / 2}
+                  y={box.cy - box.h / 2}
+                  width={box.w}
+                  height={box.h}
+                  fill="none"
+                  stroke="transparent"
+                  strokeWidth={BBOX_BORDER_HIT}
+                  pointerEvents="stroke"
+                  data-canvas-handle="true"
+                  onPointerDown={(evt) => startBboxDrag(instanceIndex, box, evt)}
+                  onContextMenu={(evt) => handleContextMenu({ type: "bbox", instanceIndex, key: "bbox" }, evt)}
+                />
+                {selectedBox && tool === "bbox" && (
+                  <g className="bbox-resize-handles">
+                    {BBOX_RESIZE_HANDLES.map(({ handle, cursor }) => {
+                      const point = bboxResizePoint(box, handle);
+                      return (
+                        <circle
+                          key={handle}
+                          cx={point.x}
+                          cy={point.y}
+                          r={BBOX_HANDLE_RADIUS}
+                          fill="#ffffff"
+                          stroke="#2563eb"
+                          strokeWidth="0.0015"
+                          data-canvas-handle="true"
+                          pointerEvents="all"
+                          vectorEffect="non-scaling-stroke"
+                          style={{ cursor }}
+                          onPointerDown={(evt) => startBboxResize(instanceIndex, box, handle, evt)}
+                          onContextMenu={(evt) => handleContextMenu({ type: "bbox", instanceIndex, key: "bbox" }, evt)}
+                        />
+                      );
+                    })}
+                  </g>
+                )}
                 {(schema.skeleton || []).map(([a, b], idx) => {
                   const pa = kptMap[schema.keypoints[a]];
                   const pb = kptMap[schema.keypoints[b]];
