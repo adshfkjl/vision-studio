@@ -2020,13 +2020,22 @@ export default function App() {
     function onKeyDown(evt) {
       const tag = evt.target?.tagName?.toLowerCase();
       if (tag === "input" || tag === "textarea" || tag === "select") return;
+      const key = evt.key.toLowerCase();
+      const isAnnotating = page === "annotate" && selectedProjectId;
+      const setZoomBy = (delta) => setZoom((current) => clampZoom(current + delta));
+      const moveActiveKeypoint = (delta) => {
+        const keypoints = schema?.keypoints || [];
+        if (!keypoints.length) return;
+        const index = Math.max(0, keypoints.indexOf(activeKeypoint));
+        setActiveKeypoint(keypoints[(index + delta + keypoints.length) % keypoints.length]);
+      };
       if ((evt.ctrlKey || evt.metaKey) && evt.key.toLowerCase() === "s") {
         evt.preventDefault();
         saveAnnotation({ force: true }).catch((err) => setMessage(err.message));
-      } else if ((evt.ctrlKey || evt.metaKey) && evt.key.toLowerCase() === "z") {
+      } else if ((evt.ctrlKey || evt.metaKey) && key === "z") {
         evt.preventDefault();
         undoAnnotation();
-      } else if ((evt.ctrlKey || evt.metaKey) && evt.key.toLowerCase() === "y") {
+      } else if ((evt.ctrlKey || evt.metaKey) && key === "y") {
         evt.preventDefault();
         redoAnnotation();
       } else if (evt.key === "ArrowRight" && page === "annotate" && selectedProjectId) {
@@ -2035,17 +2044,32 @@ export default function App() {
       } else if (evt.key === "ArrowLeft" && page === "annotate" && selectedProjectId) {
         const idx = images.findIndex((img) => img.name === selectedImageName);
         if (idx > 0) setSelectedImageName(images[idx - 1].name);
-      } else if (evt.key.toLowerCase() === "b" && schema?.task_type === "pose") {
+      } else if (isAnnotating && (key === "v" || key === "m")) {
+        setTool("mouse");
+      } else if (isAnnotating && key === "b" && (schema?.task_type === "pose" || schema?.task_type === "detect")) {
         setTool("bbox");
-      } else if (evt.key.toLowerCase() === "k" && schema?.task_type === "pose") {
+      } else if (isAnnotating && key === "k" && schema?.task_type === "pose") {
         setTool("keypoint");
-      } else if (evt.key.toLowerCase() === "p" && schema?.task_type === "segment") {
+      } else if (isAnnotating && key === "p" && schema?.task_type === "segment") {
         setTool("polygon");
+      } else if (isAnnotating && key === "[") {
+        moveActiveKeypoint(-1);
+      } else if (isAnnotating && key === "]") {
+        moveActiveKeypoint(1);
+      } else if (isAnnotating && (key === "=" || key === "+")) {
+        evt.preventDefault();
+        setZoomBy(0.25);
+      } else if (isAnnotating && key === "-") {
+        evt.preventDefault();
+        setZoomBy(-0.25);
+      } else if (isAnnotating && key === "0") {
+        evt.preventDefault();
+        setZoom(1);
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [annotation, historyPast, historyFuture, images, page, schema, selectedImageName, saveState]);
+  }, [activeKeypoint, annotation, historyPast, historyFuture, images, page, schema, selectedImageName, selectedProjectId, saveState]);
 
   return (
     <div className="app">
