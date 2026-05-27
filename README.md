@@ -45,7 +45,7 @@ On the annotation canvas, use the mouse wheel to zoom around the cursor and hold
 
 Use the `模型工作台` button in the top bar to run prediction outside the project annotation/training tabs. Select a project to reuse its trained `best.pt`, `last.pt`, or exported ONNX artifacts, or switch to a local model path. Prediction can run against a project image or an image path that the backend can access.
 
-Use the import form to add any absolute dataset path, or place demo data under this project as `images`, `labels`, and `yolo-pose/data.yaml`, then call `POST /api/demo/import-current`.
+Use the import form to add any absolute dataset path, or place demo data under this project as `images`, `labels`, and `yolo-pose/data.yaml`, then call `POST /api/demo/import-current`. The import form can match existing YOLO label folders by image stem, or read a CVAT 1.1 XML file such as `annotations.xml` and materialize matched annotations into the project. In the annotation page, `删除当前图片` removes the selected image from the project and clears its internal annotation without deleting the original source image file.
 
 Environment variables:
 

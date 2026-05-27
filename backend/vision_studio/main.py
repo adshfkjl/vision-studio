@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .config import cors_allow_origins
+from .cvat import import_cvat_annotations, schema_from_cvat_xml
 from .datasets import materialize_dataset, materialize_preview, split_project
 from .inference import resolve_image_path, resolve_model_path, run_prediction
 from .jobs import export_onnx, list_jobs, load_job, start_training
@@ -55,6 +56,7 @@ class ImportProjectRequest(BaseModel):
     image_dir: str
     label_dir: str | None = None
     data_yaml: str | None = None
+    annotation_file: str | None = None
 
 
 class CreateProjectRequest(BaseModel):
@@ -169,10 +171,13 @@ def import_project(req: ImportProjectRequest) -> dict[str, Any]:
     image_dir = abs_path(req.image_dir)
     label_dir = abs_path(req.label_dir)
     data_yaml = abs_path(req.data_yaml)
+    annotation_file = abs_path(req.annotation_file)
     if image_dir is None or not image_dir.is_dir():
         raise HTTPException(400, f"Image directory not found: {req.image_dir}")
     if label_dir is not None and not label_dir.is_dir():
         raise HTTPException(400, f"Label directory not found: {req.label_dir}")
+    if annotation_file is not None and not annotation_file.is_file():
+        raise HTTPException(400, f"Annotation file not found: {req.annotation_file}")
 
     project_id = unique_project_id(req.name)
     pdir = project_dir(project_id)
@@ -188,7 +193,10 @@ def import_project(req: ImportProjectRequest) -> dict[str, Any]:
         rel = str(image.relative_to(image_dir)).replace("\\", "/")
         images.append({"name": rel, "path": str(image), "width": w, "height": h, "annotated": False})
 
-    schema = schema_from_data_yaml(data_yaml, req.task_type, image_dir=image_dir)
+    if annotation_file and annotation_file.suffix.lower() == ".xml":
+        schema = schema_from_cvat_xml(annotation_file, req.task_type)
+    else:
+        schema = schema_from_data_yaml(data_yaml, req.task_type, image_dir=image_dir)
     project = {
         "id": project_id,
         "name": req.name,
@@ -200,6 +208,21 @@ def import_project(req: ImportProjectRequest) -> dict[str, Any]:
         "images": images,
         "split": None,
     }
+    if annotation_file and annotation_file.suffix.lower() == ".xml":
+        project["import_summary"] = import_cvat_annotations(project, annotation_file)
+    elif label_dir is not None:
+        stems = {Path(item["name"]).stem.lower() for item in images}
+        labels = sorted(label_dir.glob("*.txt"))
+        matched = {label.stem.lower() for label in labels if label.stem.lower() in stems}
+        for item in images:
+            if Path(item["name"]).stem.lower() in matched:
+                item["annotated"] = True
+        project["import_summary"] = {
+            "annotation_format": "yolo_labels",
+            "annotation_images": len(labels),
+            "matched_annotations": len(matched),
+            "unmatched_annotations": max(0, len(labels) - len(matched)),
+        }
     save_project(project)
     return project
 
@@ -260,6 +283,23 @@ async def upload_images(project_id: str, files: list[UploadFile] = File(...)) ->
         existing_names.add(item["name"])
     save_project(project)
     return {"added": added, "total": len(project.get("images", []))}
+
+
+@app.delete("/api/projects/{project_id}/images/{image_name:path}")
+def delete_image(project_id: str, image_name: str) -> dict[str, Any]:
+    project = load_project(project_id)
+    before = len(project.get("images", []))
+    project["images"] = [item for item in project.get("images", []) if item.get("name") != image_name]
+    if len(project["images"]) == before:
+        raise HTTPException(404, "Image not found")
+    ann_path = annotation_path(project_id, image_name)
+    if ann_path.exists():
+        ann_path.unlink()
+    label_path = yolo_labels_dir(project_id) / f"{Path(image_name).stem}.txt"
+    if label_path.exists():
+        label_path.unlink()
+    save_project(project)
+    return {"removed": image_name, "total": len(project.get("images", []))}
 
 
 @app.get("/api/projects/{project_id}/images/{image_name:path}")

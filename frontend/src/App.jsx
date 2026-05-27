@@ -26,6 +26,7 @@ const blankImport = {
   image_dir: "images",
   label_dir: "labels",
   data_yaml: "yolo-pose/data.yaml",
+  annotation_file: "",
 };
 
 const blankCreate = {
@@ -113,6 +114,7 @@ function importFormForTask(taskType) {
     image_dir: "images",
     label_dir: taskType === "classify" || taskType === "obb" ? "" : "labels",
     data_yaml: taskType === "classify" || taskType === "obb" ? "" : "data.yaml",
+    annotation_file: "",
   };
 }
 
@@ -131,6 +133,7 @@ function updateImportFormTask(current, taskType) {
     image_dir: current.image_dir || base.image_dir,
     label_dir: taskType === "classify" || taskType === "obb" ? "" : current.label_dir || base.label_dir,
     data_yaml: taskType === "classify" || taskType === "obb" ? "" : current.data_yaml || base.data_yaml,
+    annotation_file: current.annotation_file || "",
   };
 }
 
@@ -1161,7 +1164,9 @@ function ProjectCenter({ projects, tasks, setSelectedProjectId, setPage, importF
       const project = await api.importProject(importForm);
       await refreshProjects(project.id);
       enterProject(project.id);
-      const text = `项目“${project.name}”已导入，已进入项目工作区。`;
+      const summary = project.import_summary;
+      const matchText = summary ? `匹配标注 ${summary.matched_annotations}/${summary.annotation_images}，未匹配 ${summary.unmatched_annotations}。` : "";
+      const text = `项目“${project.name}”已导入，已进入项目工作区。${matchText}`;
       setActionStatus(text);
       setMessage(text);
     } catch (err) {
@@ -1282,6 +1287,7 @@ function ProjectCenter({ projects, tasks, setSelectedProjectId, setPage, importF
             <input value={importForm.image_dir} onChange={(e) => setImportForm({ ...importForm, image_dir: e.target.value })} placeholder="图片目录，例如 images" />
             <input value={importForm.label_dir || ""} onChange={(e) => setImportForm({ ...importForm, label_dir: e.target.value })} placeholder="标签目录，例如 labels" />
             <input value={importForm.data_yaml || ""} onChange={(e) => setImportForm({ ...importForm, data_yaml: e.target.value })} placeholder="data.yaml，例如 yolo-pose/data.yaml" />
+            <input value={importForm.annotation_file || ""} onChange={(e) => setImportForm({ ...importForm, annotation_file: e.target.value })} placeholder="CVAT XML 标注文件，例如 annotations.xml" />
           </div>
           <div className="button-row">
             <button className="primary" onClick={doImport}><FolderInput size={15} />导入并进入</button>
@@ -1387,6 +1393,7 @@ function AnnotatePage(props) {
     saveState,
     validation,
     removeSelectedInstance,
+    deleteSelectedImage,
     zoom,
     setZoom,
     message,
@@ -1428,6 +1435,7 @@ function AnnotatePage(props) {
           <button onClick={redoAnnotation} disabled={!canRedo}><Undo2 size={15} className="redo-icon" />重做</button>
           <button onClick={saveAnnotation}><Save size={15} />保存</button>
           <button onClick={removeSelectedInstance}><Trash2 size={15} />删除最后实例</button>
+          <button onClick={deleteSelectedImage} disabled={!selectedImage}><Trash2 size={15} />删除当前图片</button>
           <div className="zoom-controls">
             <button title="缩小" onClick={() => setZoom(Math.max(0.25, Number((zoom - 0.25).toFixed(2))))}><ZoomOut size={15} /></button>
             <input type="range" min="0.25" max="4" step="0.05" value={zoom} onChange={(e) => setZoom(Number(e.target.value))} />
@@ -1971,6 +1979,21 @@ export default function App() {
     updateAnnotation({ ...annotation, instances: (annotation.instances || []).slice(0, -1) });
   }
 
+  async function deleteSelectedImage() {
+    if (!selectedProject || !selectedImage) return;
+    const ok = window.confirm(`从项目中删除图片“${selectedImage.name}”？原始数据目录中的图片文件不会被删除。`);
+    if (!ok) return;
+    try {
+      await api.deleteImage(selectedProject.id, selectedImage.name);
+      setMessage(`已从项目中删除图片：${selectedImage.name}`);
+      await refreshProjects(selectedProject.id);
+      await refreshProjectData(selectedProject.id, { preserveTool: true });
+      await refreshValidation(selectedProject.id).catch(() => null);
+    } catch (err) {
+      setMessage(`删除图片失败：${err.message}`);
+    }
+  }
+
   function undoAnnotation() {
     setHistoryPast((past) => {
       if (!past.length) return past;
@@ -2163,6 +2186,7 @@ export default function App() {
                 saveState={saveState}
                 validation={validation}
                 removeSelectedInstance={removeSelectedInstance}
+                deleteSelectedImage={deleteSelectedImage}
                 zoom={zoom}
                 setZoom={setZoom}
                 message={message}

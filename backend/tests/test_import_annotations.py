@@ -1,0 +1,109 @@
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from fastapi.testclient import TestClient
+from PIL import Image
+
+from vision_studio.main import app
+from vision_studio.storage import annotation_path, config_path, read_json
+
+
+CVAT_XML = """<?xml version="1.0" encoding="utf-8"?>
+<annotations>
+  <version>1.1</version>
+  <meta>
+    <task>
+      <labels>
+        <label>
+          <name>stem</name>
+          <color>#5e7934</color>
+          <type>skeleton</type>
+          <svg>&lt;line data-type="edge" data-node-from="1" data-node-to="2"&gt;&lt;/line&gt;&lt;line data-type="edge" data-node-from="2" data-node-to="3"&gt;&lt;/line&gt;</svg>
+        </label>
+        <label><name>1</name><type>points</type><parent>stem</parent></label>
+        <label><name>2</name><type>points</type><parent>stem</parent></label>
+        <label><name>3</name><type>points</type><parent>stem</parent></label>
+      </labels>
+    </task>
+  </meta>
+  <image id="0" name="plant.jpg" width="100" height="80">
+    <skeleton label="stem">
+      <points label="1" outside="0" occluded="0" points="10,20"></points>
+      <points label="2" outside="0" occluded="0" points="20,30"></points>
+      <points label="3" outside="0" occluded="1" points="30,40"></points>
+    </skeleton>
+  </image>
+</annotations>
+"""
+
+
+class AnnotationImportTests(unittest.TestCase):
+    def test_import_project_materializes_matching_cvat_xml_annotations(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data_root = root / "data"
+            projects_root = data_root / "projects"
+            jobs_root = data_root / "jobs"
+            image_dir = root / "images"
+            image_dir.mkdir()
+            Image.new("RGB", (100, 80), "white").save(image_dir / "plant.jpg")
+            xml_path = root / "annotations.xml"
+            xml_path.write_text(CVAT_XML, encoding="utf-8")
+
+            with patch("vision_studio.storage.DATA_ROOT", data_root), patch("vision_studio.storage.PROJECTS_ROOT", projects_root), patch("vision_studio.storage.JOBS_ROOT", jobs_root):
+                response = TestClient(app).post(
+                    "/api/projects/import",
+                    json={
+                        "name": "cvat import",
+                        "task_type": "pose",
+                        "image_dir": str(image_dir),
+                        "annotation_file": str(xml_path),
+                    },
+                )
+                project = response.json()
+                ann = read_json(annotation_path(project["id"], "plant.jpg"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(project["import_summary"]["annotation_format"], "cvat_xml")
+        self.assertEqual(project["import_summary"]["matched_annotations"], 1)
+        self.assertEqual(project["schema"]["keypoints"], ["1", "2", "3"])
+        self.assertEqual(ann["instances"][0]["type"], "pose")
+        self.assertAlmostEqual(ann["instances"][0]["keypoints"][0]["x"], 0.1)
+        self.assertAlmostEqual(ann["instances"][0]["keypoints"][2]["y"], 0.5)
+
+    def test_delete_image_removes_project_entry_and_internal_annotations(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data_root = root / "data"
+            projects_root = data_root / "projects"
+            jobs_root = data_root / "jobs"
+            image_dir = root / "images"
+            image_dir.mkdir()
+            Image.new("RGB", (100, 80), "white").save(image_dir / "plant.jpg")
+            xml_path = root / "annotations.xml"
+            xml_path.write_text(CVAT_XML, encoding="utf-8")
+
+            with patch("vision_studio.storage.DATA_ROOT", data_root), patch("vision_studio.storage.PROJECTS_ROOT", projects_root), patch("vision_studio.storage.JOBS_ROOT", jobs_root):
+                client = TestClient(app)
+                project = client.post(
+                    "/api/projects/import",
+                    json={
+                        "name": "cvat import",
+                        "task_type": "pose",
+                        "image_dir": str(image_dir),
+                        "annotation_file": str(xml_path),
+                    },
+                ).json()
+                response = client.delete(f"/api/projects/{project['id']}/images/plant.jpg")
+                saved = read_json(config_path(project["id"]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["removed"], "plant.jpg")
+        self.assertEqual(saved["images"], [])
+        self.assertFalse(annotation_path(project["id"], "plant.jpg").exists())
+
+
+if __name__ == "__main__":
+    unittest.main()

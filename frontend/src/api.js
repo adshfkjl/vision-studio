@@ -39,6 +39,7 @@ export const api = {
   importCurrent: () => request("/api/demo/import-current", { method: "POST" }),
   images: (projectId) => request(`/api/projects/${projectId}/images?limit=500`),
   uploadImages: (projectId, files) => uploadRequest(`/api/projects/${projectId}/images/upload`, files),
+  deleteImage: (projectId, imageName) => request(`/api/projects/${projectId}/images/${encodeURIComponent(imageName)}`, { method: "DELETE" }),
   schema: (projectId) => request(`/api/projects/${projectId}/schema`),
   saveSchema: (projectId, schema) => request(`/api/projects/${projectId}/schema`, { method: "PUT", body: JSON.stringify(schema) }),
   validation: (projectId) => request(`/api/projects/${projectId}/validation`),
