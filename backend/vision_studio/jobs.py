@@ -78,6 +78,41 @@ def append_log(job_id: str, text: str) -> None:
         fh.write(text)
 
 
+def process_tree(pid: int) -> list[Any]:
+    import psutil
+
+    parent = psutil.Process(pid)
+    return parent.children(recursive=True) + [parent]
+
+
+def control_training_job(job_id: str, action: str) -> dict[str, Any]:
+    job = load_job(job_id)
+    if job.get("kind") != "train":
+        raise ValueError("Only training jobs can be controlled")
+    pid = job.get("pid")
+    if not pid:
+        raise ValueError("Training process is not available yet")
+    processes = process_tree(int(pid))
+    if action == "pause":
+        for proc in processes:
+            proc.suspend()
+        update_job(job_id, status="paused")
+        append_log(job_id, "[studio] Training paused\n")
+    elif action == "resume":
+        for proc in processes:
+            proc.resume()
+        update_job(job_id, status="running")
+        append_log(job_id, "[studio] Training resumed\n")
+    elif action == "stop":
+        update_job(job_id, status="stopping")
+        append_log(job_id, "[studio] Stopping training\n")
+        for proc in processes:
+            proc.terminate()
+    else:
+        raise ValueError(f"Unsupported job action: {action}")
+    return load_job(job_id)
+
+
 def run_training_job(job_id: str) -> None:
     job = load_job(job_id)
     update_job(job_id, status="materializing")
@@ -98,10 +133,16 @@ def run_training_job(job_id: str) -> None:
         encoding="utf-8",
         errors="replace",
     )
+    update_job(job_id, pid=proc.pid)
     assert proc.stdout is not None
     for line in proc.stdout:
         append_log(job_id, line)
     code = proc.wait()
+    latest = load_job(job_id)
+    if latest.get("status") in {"stopping", "stopped"}:
+        update_job(job_id, status="stopped")
+        append_log(job_id, "[studio] Training stopped\n")
+        return
     if code != 0:
         update_job(job_id, status="failed", error=f"Training exited with code {code}")
         return

@@ -49,6 +49,7 @@ export const apiBase = API_BASE || "same-origin";
 export const api = {
   projects: () => request("/api/projects"),
   tasks: () => request("/api/tasks"),
+  devices: () => request("/api/devices"),
   jobs: (projectId, kind = "") => request(`/api/jobs?project_id=${encodeURIComponent(projectId)}${kind ? `&kind=${encodeURIComponent(kind)}` : ""}`),
   createProject: (payload) => request("/api/projects", { method: "POST", body: JSON.stringify(payload) }),
   importProject: (payload) => request("/api/projects/import", { method: "POST", body: JSON.stringify(payload) }),
@@ -73,6 +74,9 @@ export const api = {
   train: (projectId, payload) => request(`/api/projects/${projectId}/train`, { method: "POST", body: JSON.stringify(payload) }),
   predict: (payload) => request("/api/predict", { method: "POST", body: JSON.stringify(payload) }),
   job: (jobId) => request(`/api/jobs/${jobId}`),
+  pauseJob: (jobId) => request(`/api/jobs/${jobId}/pause`, { method: "POST" }),
+  resumeJob: (jobId) => request(`/api/jobs/${jobId}/resume`, { method: "POST" }),
+  stopJob: (jobId) => request(`/api/jobs/${jobId}/stop`, { method: "POST" }),
   exportOnnx: (jobId) => request(`/api/jobs/${jobId}/export/onnx`, { method: "POST" }),
 };
 

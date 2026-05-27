@@ -8,10 +8,13 @@ import {
   Image as ImageIcon,
   Move,
   MousePointer2,
+  Pause,
+  Play,
   Plus,
   Save,
   Scissors,
   Settings,
+  Square,
   Trash2,
   Undo2,
   Upload,
@@ -1612,13 +1615,23 @@ function TrainingPage({ project, schema, tasks, validation, refreshValidation, s
   const [train, setTrain] = useState(blankTrain);
   const [job, setJob] = useState(null);
   const [materialized, setMaterialized] = useState(null);
+  const [devices, setDevices] = useState(null);
   const [busy, setBusy] = useState("");
 
   useEffect(() => {
-    if (!job || ["completed", "failed"].includes(job.status)) return;
+    if (!job || ["completed", "failed", "stopped"].includes(job.status)) return;
     const timer = setInterval(async () => setJob(await api.job(job.id)), 1500);
     return () => clearInterval(timer);
   }, [job]);
+
+  useEffect(() => {
+    api.devices()
+      .then((data) => {
+        setDevices(data);
+        setTrain((current) => current.device === "auto" && data.recommended ? { ...current, device: data.recommended } : current);
+      })
+      .catch(() => null);
+  }, []);
 
   async function runValidation() {
     if (!project) return;
@@ -1655,6 +1668,20 @@ function TrainingPage({ project, schema, tasks, validation, refreshValidation, s
     }
   }
 
+  async function controlJob(action) {
+    if (!job) return;
+    try {
+      const next = action === "pause"
+        ? await api.pauseJob(job.id)
+        : action === "resume"
+          ? await api.resumeJob(job.id)
+          : await api.stopJob(job.id);
+      setJob(next);
+    } catch (err) {
+      setMessage(err.message);
+    }
+  }
+
   async function exportOnnx() {
     if (!job) return;
     setJob(await api.exportOnnx(job.id));
@@ -1668,6 +1695,10 @@ function TrainingPage({ project, schema, tasks, validation, refreshValidation, s
   const modelPresets = taskPresets(schema.task_type);
   const annotationAvailable = Boolean(task.station_annotation);
   const modelPlaceholder = defaultModelForTask(tasks, schema.task_type);
+  const activeJob = job && !["completed", "failed", "stopped"].includes(job.status);
+  const canPause = job && ["materializing", "running"].includes(job.status);
+  const canResume = job?.status === "paused";
+  const canStop = job && ["materializing", "running", "paused"].includes(job.status);
 
   return (
     <section className="panel train-page workflow">
@@ -1731,12 +1762,24 @@ function TrainingPage({ project, schema, tasks, validation, refreshValidation, s
         <label>Epochs<input type="number" value={train.epochs} onChange={(e) => setTrain({ ...train, epochs: Number(e.target.value) })} /></label>
         <label>Imgsz<input type="number" value={train.imgsz} onChange={(e) => setTrain({ ...train, imgsz: Number(e.target.value) })} /></label>
         <label>Batch<input type="number" value={train.batch} onChange={(e) => setTrain({ ...train, batch: Number(e.target.value) })} /></label>
-        <label>Device<input value={train.device} onChange={(e) => setTrain({ ...train, device: e.target.value })} /></label>
+        <label>Device
+          <select value={train.device} onChange={(e) => setTrain({ ...train, device: e.target.value })}>
+            {(devices?.devices || [{ id: "auto", name: "自动（GPU 优先）" }, { id: "0", name: "GPU 0" }, { id: "cpu", name: "CPU" }]).map((device) => (
+              <option key={device.id} value={device.id}>{device.name}</option>
+            ))}
+          </select>
+        </label>
         <label>LR<input type="number" step="0.001" value={train.lr0} onChange={(e) => setTrain({ ...train, lr0: Number(e.target.value) })} /></label>
         <label>Patience<input type="number" value={train.patience} onChange={(e) => setTrain({ ...train, patience: Number(e.target.value) })} /></label>
       </div>
+      <div className="action-status">
+        {!devices ? "正在检测服务器训练设备..." : devices.cuda_available ? `已检测到服务器 GPU，推荐使用 device=${devices.recommended}。` : "未检测到 CUDA GPU，将使用 CPU；请确认后端 Python 环境安装了 CUDA 版 PyTorch。"}
+      </div>
       <div className="button-row">
-        <button className="primary" disabled={!trainReady} onClick={startTrain}><Brain size={15} />开始训练</button>
+        <button className="primary" disabled={!trainReady || activeJob} onClick={startTrain}><Brain size={15} />开始训练</button>
+        {canPause && <button onClick={() => controlJob("pause")}><Pause size={15} />暂停</button>}
+        {canResume && <button onClick={() => controlJob("resume")}><Play size={15} />继续</button>}
+        {canStop && <button onClick={() => controlJob("stop")}><Square size={15} />终止</button>}
         {job && artifacts.some(([name]) => name.endsWith(".pt")) && <button onClick={exportOnnx}><GitBranch size={15} />导出 ONNX</button>}
       </div>
       {job && (

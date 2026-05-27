@@ -14,8 +14,9 @@ from . import storage as storage_module
 from .annotation_import import import_annotation_source, merge_import_schema, schema_from_annotation_source
 from .config import cors_allow_origins
 from .datasets import materialize_dataset, materialize_preview, split_project
+from .devices import available_devices
 from .inference import resolve_image_path, resolve_model_path, run_prediction
-from .jobs import export_onnx, list_jobs, load_job, start_training
+from .jobs import control_training_job, export_onnx, list_jobs, load_job, start_training
 from .storage import (
     APP_ROOT,
     DATA_ROOT,
@@ -156,6 +157,11 @@ def get_projects() -> list[dict[str, Any]]:
 @app.get("/api/jobs")
 def get_jobs(project_id: str | None = None, kind: str | None = None) -> dict[str, Any]:
     return {"items": list_jobs(project_id=project_id, kind=kind)}
+
+
+@app.get("/api/devices")
+def get_devices() -> dict[str, Any]:
+    return available_devices()
 
 
 @app.get("/api/tasks")
@@ -450,6 +456,30 @@ def post_train(project_id: str, req: TrainRequest) -> dict[str, Any]:
 @app.get("/api/jobs/{job_id}")
 def get_job(job_id: str) -> dict[str, Any]:
     return load_job(job_id)
+
+
+@app.post("/api/jobs/{job_id}/pause")
+def pause_job(job_id: str) -> dict[str, Any]:
+    try:
+        return control_training_job(job_id, "pause")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/jobs/{job_id}/resume")
+def resume_job(job_id: str) -> dict[str, Any]:
+    try:
+        return control_training_job(job_id, "resume")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/jobs/{job_id}/stop")
+def stop_job(job_id: str) -> dict[str, Any]:
+    try:
+        return control_training_job(job_id, "stop")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @app.post("/api/jobs/{job_id}/export/onnx")

@@ -49,6 +49,8 @@ Use the `模型工作台` button in the top bar to run prediction outside the pr
 
 Use the import form to add any absolute dataset path, or place demo data under this project as `images`, `labels`, and `yolo-pose/data.yaml`, then call `POST /api/demo/import-current`. The import form can match existing YOLO label folders by image stem, or read a CVAT 1.1 XML file such as `annotations.xml` and materialize matched annotations into the project. In the annotation page, `删除当前图片` removes the selected image from the project and clears its internal annotation without deleting the original source image file.
 
+The training page detects server-side CUDA devices through the backend and defaults to the recommended GPU when available. Running training jobs can be paused, resumed, or stopped from the UI. If CUDA is not detected, confirm the backend Python environment is using a CUDA-enabled PyTorch build.
+
 Environment variables:
 
 - `VISION_STUDIO_HOST`: backend host, default `127.0.0.1`
