@@ -23,6 +23,14 @@ If dependencies need to be recreated:
 python -m pip install --target backend\.deps -r backend\requirements.txt
 ```
 
+For GPU training on Windows, use the conda environment `vision-studio-gpu` and start the backend with:
+
+```powershell
+.\run_backend_gpu.ps1
+```
+
+This skips `backend\.deps` so the CUDA-enabled PyTorch installed in the conda environment is used instead of the bundled CPU-only torch package.
+
 ## Frontend
 
 ```powershell
