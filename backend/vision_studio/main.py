@@ -4,12 +4,13 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from . import storage as storage_module
 from .annotation_import import import_annotation_source, merge_import_schema, schema_from_annotation_source
 from .config import cors_allow_origins
 from .datasets import materialize_dataset, materialize_preview, split_project
@@ -103,6 +104,30 @@ class PredictRequest(BaseModel):
     iou: float = 0.7
     imgsz: int | None = None
     device: str = "auto"
+
+
+def blank_to_none(value: str | None) -> str | None:
+    if value is None:
+        return None
+    value = value.strip()
+    return value or None
+
+
+def save_uploaded_annotation(upload: UploadFile, target_dir: Path) -> Path:
+    target_dir.mkdir(parents=True, exist_ok=True)
+    filename = Path(upload.filename or "annotations").name
+    if not filename:
+        filename = "annotations"
+    target = target_dir / filename
+    stem = target.stem or "annotations"
+    suffix = target.suffix
+    idx = 2
+    while target.exists():
+        target = target_dir / f"{stem}-{idx}{suffix}"
+        idx += 1
+    with target.open("wb") as fh:
+        shutil.copyfileobj(upload.file, fh)
+    return target
 
 
 @app.on_event("startup")
@@ -239,6 +264,29 @@ def import_project(req: ImportProjectRequest) -> dict[str, Any]:
     return project
 
 
+@app.post("/api/projects/import-file")
+def import_project_file(
+    name: str = Form(...),
+    task_type: str = Form(...),
+    image_dir: str = Form(...),
+    label_dir: str | None = Form(None),
+    data_yaml: str | None = Form(None),
+    annotation_format: str | None = Form(None),
+    annotation_file: UploadFile = File(...),
+) -> dict[str, Any]:
+    annotation_path = save_uploaded_annotation(annotation_file, storage_module.DATA_ROOT / "import_uploads")
+    req = ImportProjectRequest(
+        name=name,
+        task_type=task_type,
+        image_dir=image_dir,
+        label_dir=blank_to_none(label_dir),
+        data_yaml=blank_to_none(data_yaml),
+        annotation_file=str(annotation_path),
+        annotation_format=blank_to_none(annotation_format),
+    )
+    return import_project(req)
+
+
 @app.get("/api/projects/{project_id}/schema")
 def get_schema(project_id: str) -> dict[str, Any]:
     return load_project(project_id)["schema"]
@@ -362,6 +410,17 @@ def import_project_annotations(project_id: str, req: ImportAnnotationsRequest) -
         raise HTTPException(400, str(exc)) from exc
     save_project(project)
     return {"project": project, "import_summary": project["import_summary"]}
+
+
+@app.post("/api/projects/{project_id}/annotations/import-file")
+def import_project_annotation_file(
+    project_id: str,
+    annotation_format: str | None = Form(None),
+    annotation_file: UploadFile = File(...),
+) -> dict[str, Any]:
+    annotation_source = save_uploaded_annotation(annotation_file, project_dir(project_id) / "imports")
+    req = ImportAnnotationsRequest(annotation_path=str(annotation_source), annotation_format=blank_to_none(annotation_format))
+    return import_project_annotations(project_id, req)
 
 
 @app.post("/api/projects/{project_id}/split")

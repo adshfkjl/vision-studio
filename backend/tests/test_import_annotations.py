@@ -224,6 +224,54 @@ class AnnotationImportTests(unittest.TestCase):
         self.assertEqual(response.json()["import_summary"]["annotation_format"], "yolo_labels")
         self.assertAlmostEqual(ann["instances"][0]["bbox"]["cy"], 0.4375)
 
+    def test_existing_project_can_import_uploaded_annotation_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data_root = root / "data"
+            projects_root = data_root / "projects"
+            jobs_root = data_root / "jobs"
+            image_dir = root / "images"
+            image_dir.mkdir()
+            Image.new("RGB", (100, 80), "white").save(image_dir / "plant.jpg")
+
+            with patch("vision_studio.storage.DATA_ROOT", data_root), patch("vision_studio.storage.PROJECTS_ROOT", projects_root), patch("vision_studio.storage.JOBS_ROOT", jobs_root):
+                client = TestClient(app)
+                project = client.post("/api/projects", json={"name": "upload import", "task_type": "pose"}).json()
+                client.post(f"/api/projects/{project['id']}/images/upload", files=[("files", ("plant.jpg", (image_dir / "plant.jpg").read_bytes(), "image/jpeg"))])
+                response = client.post(
+                    f"/api/projects/{project['id']}/annotations/import-file",
+                    data={"annotation_format": "auto"},
+                    files={"annotation_file": ("annotations.xml", CVAT_XML.encode("utf-8"), "application/xml")},
+                )
+                ann = read_json(annotation_path(project["id"], "uploaded/plant.jpg"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["import_summary"]["annotation_format"], "cvat_xml")
+        self.assertEqual(ann["instances"][0]["type"], "pose")
+
+    def test_import_project_can_use_uploaded_annotation_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data_root = root / "data"
+            projects_root = data_root / "projects"
+            jobs_root = data_root / "jobs"
+            image_dir = root / "images"
+            image_dir.mkdir()
+            Image.new("RGB", (100, 80), "white").save(image_dir / "plant.jpg")
+
+            with patch("vision_studio.storage.DATA_ROOT", data_root), patch("vision_studio.storage.PROJECTS_ROOT", projects_root), patch("vision_studio.storage.JOBS_ROOT", jobs_root):
+                response = TestClient(app).post(
+                    "/api/projects/import-file",
+                    data={"name": "uploaded cvat import", "task_type": "pose", "image_dir": str(image_dir), "annotation_format": "auto"},
+                    files={"annotation_file": ("annotations.xml", CVAT_XML.encode("utf-8"), "application/xml")},
+                )
+                project = response.json()
+                ann = read_json(annotation_path(project["id"], "plant.jpg"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(project["import_summary"]["annotation_format"], "cvat_xml")
+        self.assertEqual(ann["instances"][0]["type"], "pose")
+
 
 if __name__ == "__main__":
     unittest.main()
