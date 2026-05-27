@@ -7,8 +7,15 @@ from pathlib import Path
 backend = Path(__file__).resolve().parent
 deps = backend / ".deps"
 sys.path.insert(0, str(backend))
-if os.environ.get("VISION_STUDIO_USE_BUNDLED_DEPS", "1") != "0":
+use_bundled_deps = os.environ.get("VISION_STUDIO_USE_BUNDLED_DEPS", "1") != "0"
+if use_bundled_deps:
     sys.path.insert(0, str(deps))
+else:
+    deps_resolved = str(deps.resolve()).lower()
+    sys.path[:] = [
+        item for item in sys.path
+        if str(Path(item).resolve()).lower() != deps_resolved
+    ]
 
 import uvicorn
 
