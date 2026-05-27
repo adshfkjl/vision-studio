@@ -10,8 +10,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from .annotation_import import import_annotation_source, merge_import_schema, schema_from_annotation_source
 from .config import cors_allow_origins
-from .cvat import import_cvat_annotations, schema_from_cvat_xml
 from .datasets import materialize_dataset, materialize_preview, split_project
 from .inference import resolve_image_path, resolve_model_path, run_prediction
 from .jobs import export_onnx, list_jobs, load_job, start_training
@@ -57,6 +57,12 @@ class ImportProjectRequest(BaseModel):
     label_dir: str | None = None
     data_yaml: str | None = None
     annotation_file: str | None = None
+    annotation_format: str | None = None
+
+
+class ImportAnnotationsRequest(BaseModel):
+    annotation_path: str
+    annotation_format: str | None = None
 
 
 class CreateProjectRequest(BaseModel):
@@ -193,8 +199,11 @@ def import_project(req: ImportProjectRequest) -> dict[str, Any]:
         rel = str(image.relative_to(image_dir)).replace("\\", "/")
         images.append({"name": rel, "path": str(image), "width": w, "height": h, "annotated": False})
 
-    if annotation_file and annotation_file.suffix.lower() == ".xml":
-        schema = schema_from_cvat_xml(annotation_file, req.task_type)
+    if annotation_file:
+        try:
+            schema = schema_from_annotation_source(annotation_file, req.task_type, req.annotation_format)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
     else:
         schema = schema_from_data_yaml(data_yaml, req.task_type, image_dir=image_dir)
     project = {
@@ -208,8 +217,11 @@ def import_project(req: ImportProjectRequest) -> dict[str, Any]:
         "images": images,
         "split": None,
     }
-    if annotation_file and annotation_file.suffix.lower() == ".xml":
-        project["import_summary"] = import_cvat_annotations(project, annotation_file)
+    if annotation_file:
+        try:
+            project["import_summary"] = import_annotation_source(project, annotation_file, req.annotation_format)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
     elif label_dir is not None:
         stems = {Path(item["name"]).stem.lower() for item in images}
         labels = sorted(label_dir.glob("*.txt"))
@@ -334,6 +346,22 @@ def put_annotation(project_id: str, image_name: str, annotation: dict[str, Any])
             break
     save_project(project)
     return {"ok": True, "annotation_path": str(path)}
+
+
+@app.post("/api/projects/{project_id}/annotations/import")
+def import_project_annotations(project_id: str, req: ImportAnnotationsRequest) -> dict[str, Any]:
+    project = load_project(project_id)
+    annotation_source = abs_path(req.annotation_path)
+    if annotation_source is None or not annotation_source.exists():
+        raise HTTPException(400, f"Annotation path not found: {req.annotation_path}")
+    try:
+        imported_schema = schema_from_annotation_source(annotation_source, project["schema"]["task_type"], req.annotation_format)
+        project["schema"] = merge_import_schema(project["schema"], imported_schema)
+        project["import_summary"] = import_annotation_source(project, annotation_source, req.annotation_format)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    save_project(project)
+    return {"project": project, "import_summary": project["import_summary"]}
 
 
 @app.post("/api/projects/{project_id}/split")

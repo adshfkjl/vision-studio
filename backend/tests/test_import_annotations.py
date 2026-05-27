@@ -38,6 +38,28 @@ CVAT_XML = """<?xml version="1.0" encoding="utf-8"?>
 </annotations>
 """
 
+VOC_XML = """<annotation>
+  <filename>plant.jpg</filename>
+  <size><width>100</width><height>80</height></size>
+  <object><name>leaf</name><bndbox><xmin>10</xmin><ymin>20</ymin><xmax>30</xmax><ymax>50</ymax></bndbox></object>
+</annotation>
+"""
+
+COCO_JSON = {
+    "images": [{"id": 1, "file_name": "plant.jpg", "width": 100, "height": 80}],
+    "categories": [{"id": 7, "name": "leaf"}],
+    "annotations": [{"id": 1, "image_id": 1, "category_id": 7, "bbox": [10, 20, 20, 30]}],
+}
+
+LABELME_JSON = {
+    "imagePath": "plant.jpg",
+    "imageWidth": 100,
+    "imageHeight": 80,
+    "shapes": [
+        {"label": "leaf", "shape_type": "rectangle", "points": [[10, 20], [30, 50]]},
+    ],
+}
+
 
 class AnnotationImportTests(unittest.TestCase):
     def test_import_project_materializes_matching_cvat_xml_annotations(self) -> None:
@@ -103,6 +125,104 @@ class AnnotationImportTests(unittest.TestCase):
         self.assertEqual(response.json()["removed"], "plant.jpg")
         self.assertEqual(saved["images"], [])
         self.assertFalse(annotation_path(project["id"], "plant.jpg").exists())
+
+    def test_existing_project_can_import_pascal_voc_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data_root = root / "data"
+            projects_root = data_root / "projects"
+            jobs_root = data_root / "jobs"
+            image_dir = root / "images"
+            image_dir.mkdir()
+            Image.new("RGB", (100, 80), "white").save(image_dir / "plant.jpg")
+            voc_dir = root / "voc"
+            voc_dir.mkdir()
+            (voc_dir / "plant.xml").write_text(VOC_XML, encoding="utf-8")
+
+            with patch("vision_studio.storage.DATA_ROOT", data_root), patch("vision_studio.storage.PROJECTS_ROOT", projects_root), patch("vision_studio.storage.JOBS_ROOT", jobs_root):
+                client = TestClient(app)
+                project = client.post("/api/projects", json={"name": "voc project", "task_type": "detect"}).json()
+                client.post(f"/api/projects/{project['id']}/images/upload", files=[("files", ("plant.jpg", (image_dir / "plant.jpg").read_bytes(), "image/jpeg"))])
+                response = client.post(f"/api/projects/{project['id']}/annotations/import", json={"annotation_path": str(voc_dir)})
+                ann = read_json(annotation_path(project["id"], "uploaded/plant.jpg"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["import_summary"]["annotation_format"], "pascal_voc")
+        self.assertEqual(ann["instances"][0]["type"], "box")
+        self.assertAlmostEqual(ann["instances"][0]["bbox"]["cx"], 0.2)
+
+    def test_existing_project_can_import_coco_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data_root = root / "data"
+            projects_root = data_root / "projects"
+            jobs_root = data_root / "jobs"
+            image_dir = root / "images"
+            image_dir.mkdir()
+            Image.new("RGB", (100, 80), "white").save(image_dir / "plant.jpg")
+            coco_path = root / "instances.json"
+            import json
+            coco_path.write_text(json.dumps(COCO_JSON), encoding="utf-8")
+
+            with patch("vision_studio.storage.DATA_ROOT", data_root), patch("vision_studio.storage.PROJECTS_ROOT", projects_root), patch("vision_studio.storage.JOBS_ROOT", jobs_root):
+                client = TestClient(app)
+                project = client.post("/api/projects", json={"name": "coco project", "task_type": "detect"}).json()
+                client.post(f"/api/projects/{project['id']}/images/upload", files=[("files", ("plant.jpg", (image_dir / "plant.jpg").read_bytes(), "image/jpeg"))])
+                response = client.post(f"/api/projects/{project['id']}/annotations/import", json={"annotation_path": str(coco_path)})
+                ann = read_json(annotation_path(project["id"], "uploaded/plant.jpg"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["import_summary"]["annotation_format"], "coco_json")
+        self.assertEqual(ann["instances"][0]["class_id"], 0)
+
+    def test_existing_project_can_import_labelme_json_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data_root = root / "data"
+            projects_root = data_root / "projects"
+            jobs_root = data_root / "jobs"
+            image_dir = root / "images"
+            image_dir.mkdir()
+            Image.new("RGB", (100, 80), "white").save(image_dir / "plant.jpg")
+            labelme_dir = root / "labelme"
+            labelme_dir.mkdir()
+            import json
+            (labelme_dir / "plant.json").write_text(json.dumps(LABELME_JSON), encoding="utf-8")
+
+            with patch("vision_studio.storage.DATA_ROOT", data_root), patch("vision_studio.storage.PROJECTS_ROOT", projects_root), patch("vision_studio.storage.JOBS_ROOT", jobs_root):
+                client = TestClient(app)
+                project = client.post("/api/projects", json={"name": "labelme project", "task_type": "detect"}).json()
+                client.post(f"/api/projects/{project['id']}/images/upload", files=[("files", ("plant.jpg", (image_dir / "plant.jpg").read_bytes(), "image/jpeg"))])
+                response = client.post(f"/api/projects/{project['id']}/annotations/import", json={"annotation_path": str(labelme_dir)})
+                ann = read_json(annotation_path(project["id"], "uploaded/plant.jpg"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["import_summary"]["annotation_format"], "labelme_json")
+        self.assertEqual(ann["instances"][0]["type"], "box")
+
+    def test_existing_project_can_import_yolo_label_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data_root = root / "data"
+            projects_root = data_root / "projects"
+            jobs_root = data_root / "jobs"
+            image_dir = root / "images"
+            image_dir.mkdir()
+            Image.new("RGB", (100, 80), "white").save(image_dir / "plant.jpg")
+            yolo_dir = root / "labels"
+            yolo_dir.mkdir()
+            (yolo_dir / "plant.txt").write_text("0 0.2 0.4375 0.2 0.375\n", encoding="utf-8")
+
+            with patch("vision_studio.storage.DATA_ROOT", data_root), patch("vision_studio.storage.PROJECTS_ROOT", projects_root), patch("vision_studio.storage.JOBS_ROOT", jobs_root):
+                client = TestClient(app)
+                project = client.post("/api/projects", json={"name": "yolo project", "task_type": "detect"}).json()
+                client.post(f"/api/projects/{project['id']}/images/upload", files=[("files", ("plant.jpg", (image_dir / "plant.jpg").read_bytes(), "image/jpeg"))])
+                response = client.post(f"/api/projects/{project['id']}/annotations/import", json={"annotation_path": str(yolo_dir)})
+                ann = read_json(annotation_path(project["id"], "uploaded/plant.jpg"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["import_summary"]["annotation_format"], "yolo_labels")
+        self.assertAlmostEqual(ann["instances"][0]["bbox"]["cy"], 0.4375)
 
 
 if __name__ == "__main__":

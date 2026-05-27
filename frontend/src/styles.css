@@ -438,6 +438,10 @@ p {
   align-items: start;
 }
 
+.wide-panel {
+  grid-column: 1 / -1;
+}
+
 .annotation-page {
   height: 100%;
   display: grid;

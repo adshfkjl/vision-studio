@@ -43,6 +43,8 @@ If Vite picks another free port such as `5174`, that is fine now. The frontend s
 
 On the annotation canvas, use the mouse wheel to zoom around the cursor and hold the left button to pan the image. Click-based marking still works on the canvas itself. Annotation shortcuts: `V`/`M` mouse mode, `B` box mode, `P` polygon mode, `K` keypoint mode, `[`/`]` previous or next keypoint, `+`/`-` zoom, `0` reset zoom, arrow keys switch images, `Ctrl+S` saves, and `Ctrl+Z`/`Ctrl+Y` undo or redo.
 
+Use the project center import form to create a project from an image directory, or enter an existing project and use the `数据` page to import or rematch annotations into that current project. Supported annotation sources include YOLO TXT label folders, CVAT XML, COCO JSON, LabelMe JSON, and Pascal VOC XML; matching uses exact image names, basenames, or stems.
+
 Use the `模型工作台` button in the top bar to run prediction outside the project annotation/training tabs. Select a project to reuse its trained `best.pt`, `last.pt`, or exported ONNX artifacts, or switch to a local model path. Prediction can run against a project image or an image path that the backend can access.
 
 Use the import form to add any absolute dataset path, or place demo data under this project as `images`, `labels`, and `yolo-pose/data.yaml`, then call `POST /api/demo/import-current`. The import form can match existing YOLO label folders by image stem, or read a CVAT 1.1 XML file such as `annotations.xml` and materialize matched annotations into the project. In the annotation page, `删除当前图片` removes the selected image from the project and clears its internal annotation without deleting the original source image file.
