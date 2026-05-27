@@ -1684,7 +1684,11 @@ function TrainingPage({ project, schema, tasks, validation, refreshValidation, s
 
   async function exportOnnx() {
     if (!job) return;
-    setJob(await api.exportOnnx(job.id));
+    try {
+      setJob(await api.exportOnnx(job.id));
+    } catch (err) {
+      setMessage(err.message);
+    }
   }
 
   if (!project || !schema) return <div className="empty-state"><Brain size={32} />请先选择项目</div>;
@@ -1699,6 +1703,7 @@ function TrainingPage({ project, schema, tasks, validation, refreshValidation, s
   const canPause = job && ["materializing", "running"].includes(job.status);
   const canResume = job?.status === "paused";
   const canStop = job && ["materializing", "running", "paused"].includes(job.status);
+  const hasModelArtifact = artifacts.some(([name]) => name.endsWith(".pt"));
 
   return (
     <section className="panel train-page workflow">
@@ -1780,14 +1785,22 @@ function TrainingPage({ project, schema, tasks, validation, refreshValidation, s
         {canPause && <button onClick={() => controlJob("pause")}><Pause size={15} />暂停</button>}
         {canResume && <button onClick={() => controlJob("resume")}><Play size={15} />继续</button>}
         {canStop && <button onClick={() => controlJob("stop")}><Square size={15} />终止</button>}
-        {job && artifacts.some(([name]) => name.endsWith(".pt")) && <button onClick={exportOnnx}><GitBranch size={15} />导出 ONNX</button>}
+        {job && <button onClick={exportOnnx} disabled={!hasModelArtifact || job.status === "exporting"} title={hasModelArtifact ? "将 best.pt 或 last.pt 导出为 ONNX" : "训练完成并收集到 .pt 模型后可导出"}><GitBranch size={15} />导出 ONNX</button>}
       </div>
       {job && (
         <div className="job">
           <div className="job-head"><span>{job.status}</span>{job.error && <b>{job.error}</b>}</div>
           <pre>{job.log || "等待日志..."}</pre>
-          <div className="downloads">
-            {artifacts.map(([name, meta]) => <a key={name} href={artifactUrl(job.id, name)}><Download size={14} />{name}{meta?.size ? ` (${Math.round(meta.size / 1024)} KB)` : ""}</a>)}
+          <div className="artifact-panel">
+            <div className="artifact-head">
+              <strong>模型文件 / 训练产物</strong>
+              <span>best.pt、last.pt 可直接下载；ONNX 会导出到项目 exports 目录。</span>
+            </div>
+            <div className="downloads">
+              {artifacts.length > 0
+                ? artifacts.map(([name, meta]) => <a key={name} href={artifactUrl(job.id, name)}><Download size={14} />{name}{meta?.size ? ` (${Math.round(meta.size / 1024)} KB)` : ""}</a>)
+                : <span className="muted">训练完成后会在这里显示可下载模型。</span>}
+            </div>
           </div>
         </div>
       )}

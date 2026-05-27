@@ -60,7 +60,7 @@ def main() -> None:
         patience=int(params.get("patience", 30)),
         seed=int(params.get("seed", 42)),
         workers=min(8, os.cpu_count() or 4),
-        plots=True,
+        plots=False,
         save=True,
     )
 

@@ -692,6 +692,25 @@ label {
   flex-wrap: wrap;
 }
 
+.artifact-panel {
+  margin-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.artifact-head {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 13px;
+}
+
+.artifact-head span,
+.muted {
+  color: #6b7d78;
+  font-size: 12px;
+}
+
 pre {
   max-height: 180px;
   overflow: auto;

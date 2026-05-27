@@ -131,6 +131,40 @@ def control_training_job(job_id: str, action: str) -> dict[str, Any]:
     return load_job(job_id)
 
 
+def collect_training_artifacts(project: dict[str, Any], params: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    task = params.get("task_type", project["schema"]["task_type"])
+    name = params.get("name", "studio_train")
+    run_dir = runs_dir(project["id"]) / task / name
+    weight_dir = run_dir / "weights"
+    artifacts: dict[str, dict[str, Any]] = {}
+    for key in ("best", "last"):
+        path = weight_dir / f"{key}.pt"
+        if path.is_file():
+            artifacts[f"{key}.pt"] = {"path": str(path), "size": path.stat().st_size}
+    for pattern in ("results.csv", "results.png", "confusion_matrix.png", "labels.jpg"):
+        path = run_dir / pattern
+        if path.is_file():
+            artifacts[pattern] = {"path": str(path), "size": path.stat().st_size}
+    return artifacts
+
+
+def finalize_training_job(job_id: str, code: int) -> None:
+    job = load_job(job_id)
+    project = load_project(job["project_id"])
+    artifacts = collect_training_artifacts(project, job.get("params", {}))
+    has_model = any(name in artifacts for name in ("best.pt", "last.pt"))
+    if code != 0:
+        error = f"Training exited with code {code}"
+        if has_model:
+            update_job(job_id, status="completed", artifacts=artifacts, error=f"{error} after saving model artifacts")
+            append_log(job_id, f"[studio] {error} after saving model artifacts; keeping available outputs\n")
+            return
+        update_job(job_id, status="failed", artifacts=artifacts, error=error)
+        return
+    update_job(job_id, status="completed", artifacts=artifacts, error=None)
+    append_log(job_id, "[studio] Training completed\n")
+
+
 def run_training_job(job_id: str) -> None:
     job = load_job(job_id)
     update_job(job_id, status="materializing")
@@ -163,25 +197,7 @@ def run_training_job(job_id: str) -> None:
         update_job(job_id, status="stopped")
         append_log(job_id, "[studio] Training stopped\n")
         return
-    if code != 0:
-        update_job(job_id, status="failed", error=f"Training exited with code {code}")
-        return
-    project = load_project(job["project_id"])
-    params = job.get("params", {})
-    task = params.get("task_type", project["schema"]["task_type"])
-    name = params.get("name", "studio_train")
-    weight_dir = runs_dir(project["id"]) / task / name / "weights"
-    artifacts = {}
-    for key in ("best", "last"):
-        path = weight_dir / f"{key}.pt"
-        if path.is_file():
-            artifacts[f"{key}.pt"] = {"path": str(path), "size": path.stat().st_size}
-    for pattern in ("results.csv", "results.png", "confusion_matrix.png", "labels.jpg"):
-        path = runs_dir(project["id"]) / task / name / pattern
-        if path.is_file():
-            artifacts[pattern] = {"path": str(path), "size": path.stat().st_size}
-    update_job(job_id, status="completed", artifacts=artifacts)
-    append_log(job_id, "[studio] Training completed\n")
+    finalize_training_job(job_id, code)
 
 
 def start_training(project_id: str, params: dict[str, Any]) -> dict[str, Any]:

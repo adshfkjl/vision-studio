@@ -57,7 +57,9 @@ Use the `模型工作台` button in the top bar to run prediction outside the pr
 
 Use the import form to add any absolute dataset path, or place demo data under this project as `images`, `labels`, and `yolo-pose/data.yaml`, then call `POST /api/demo/import-current`. The import form can match existing YOLO label folders by image stem, or read a CVAT 1.1 XML file such as `annotations.xml` and materialize matched annotations into the project. In the annotation page, `删除当前图片` removes the selected image from the project and clears its internal annotation without deleting the original source image file.
 
-The training page detects server-side CUDA devices through the backend and defaults to the recommended GPU when available. Running training jobs can be paused, resumed, or stopped from the UI. If CUDA is not detected, confirm the backend Python environment is using a CUDA-enabled PyTorch build.
+The training page detects server-side CUDA devices through the backend and defaults to the recommended GPU when available. Running training jobs can be paused, resumed, or stopped from the UI. Training disables Ultralytics plot generation by default to reduce Matplotlib memory pressure during final validation. If CUDA is not detected, confirm the backend Python environment is using a CUDA-enabled PyTorch build.
+
+After training, model files are collected from `vision_studio_data/projects/<project_id>/runs/<task>/<run_name>/weights/`. The training page shows available artifacts under `模型文件 / 训练产物`; `best.pt` and `last.pt` can be downloaded directly, and ONNX exports are copied to `vision_studio_data/projects/<project_id>/exports/`. If training exits after saving weights but fails during final validation or plotting, the saved model artifacts are still collected and exposed in the UI.
 
 Environment variables:
 
