@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import os
 import threading
 import time
 import uuid
@@ -78,6 +79,23 @@ def append_log(job_id: str, text: str) -> None:
         fh.write(text)
 
 
+def training_subprocess_env() -> dict[str, str]:
+    env = os.environ.copy()
+    backend_root = Path(__file__).resolve().parents[1]
+    deps = backend_root / ".deps"
+    deps_resolved = str(deps.resolve()).lower()
+    inherited = [
+        item for item in env.get("PYTHONPATH", "").split(os.pathsep)
+        if item and str(Path(item).resolve()).lower() != deps_resolved
+    ]
+    paths = [str(backend_root)]
+    if env.get("VISION_STUDIO_USE_BUNDLED_DEPS", "1") != "0":
+        paths.append(str(deps))
+    paths.extend(item for item in inherited if item not in paths)
+    env["PYTHONPATH"] = os.pathsep.join(paths)
+    return env
+
+
 def process_tree(pid: int) -> list[Any]:
     import psutil
 
@@ -124,9 +142,11 @@ def run_training_job(job_id: str) -> None:
         "--job-id",
         job_id,
     ]
+    append_log(job_id, f"[studio] Training subprocess Python: {sys.executable}\n")
     proc = subprocess.Popen(
         cmd,
         cwd=str(Path(__file__).resolve().parents[1]),
+        env=training_subprocess_env(),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,

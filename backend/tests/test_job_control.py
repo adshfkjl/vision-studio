@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from vision_studio.jobs import create_job, load_job, update_job
+from vision_studio.jobs import create_job, load_job, training_subprocess_env, update_job
 from vision_studio.main import app
 
 
@@ -51,6 +51,21 @@ class JobControlTests(unittest.TestCase):
         self.assertEqual(stop.status_code, 200)
         self.assertTrue(process.terminated)
         self.assertEqual(stopped["status"], "stopping")
+
+    def test_gpu_training_subprocess_env_excludes_bundled_deps(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {
+                "VISION_STUDIO_USE_BUNDLED_DEPS": "0",
+                "PYTHONPATH": r"D:\projects\2\vision_studio\backend\.deps;C:\extra",
+            },
+            clear=False,
+        ):
+            env = training_subprocess_env()
+
+        self.assertIn(r"D:\projects\2\vision_studio\backend", env["PYTHONPATH"])
+        self.assertNotIn(r"D:\projects\2\vision_studio\backend\.deps", env["PYTHONPATH"])
+        self.assertIn(r"C:\extra", env["PYTHONPATH"])
 
 
 if __name__ == "__main__":

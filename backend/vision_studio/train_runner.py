@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 
 from .datasets import materialize_dataset
 from .devices import available_devices
@@ -31,6 +32,11 @@ def main() -> None:
     update_job(args.job_id, status="running", dataset={"root": str(dataset.root), "data_yaml": str(dataset.data_yaml)})
 
     from ultralytics import YOLO
+    import torch
+
+    append_log(args.job_id, f"[studio] Runner Python: {sys.executable}\n")
+    append_log(args.job_id, f"[studio] Torch: {torch.__version__} from {torch.__file__}\n")
+    append_log(args.job_id, f"[studio] CUDA available: {torch.cuda.is_available()} count={torch.cuda.device_count()}\n")
 
     task_type = params.get("task_type", project["schema"]["task_type"])
     task = get_task(task_type)
