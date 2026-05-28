@@ -126,8 +126,26 @@ def image_size(path: Path) -> tuple[int, int]:
         return img.size
 
 
+def _safe_sidecar_path(image_name: str, suffix: str) -> Path:
+    parts = []
+    for raw_part in image_name.replace("\\", "/").split("/"):
+        if raw_part in {"", ".", ".."}:
+            continue
+        cleaned = re.sub(r'[<>:"|?*\x00-\x1f]+', "-", raw_part).strip()
+        if cleaned:
+            parts.append(cleaned)
+    if not parts:
+        parts = ["image"]
+    parts[-1] = f"{Path(parts[-1]).stem}{suffix}"
+    return Path(*parts)
+
+
 def annotation_path(project_id: str, image_name: str) -> Path:
-    return annotations_dir(project_id) / f"{Path(image_name).stem}.json"
+    return annotations_dir(project_id) / _safe_sidecar_path(image_name, ".json")
+
+
+def generated_yolo_label_path(project_id: str, image_name: str) -> Path:
+    return yolo_labels_dir(project_id) / _safe_sidecar_path(image_name, ".txt")
 
 
 def yolo_label_path(project: dict[str, Any], image_name: str) -> Path | None:

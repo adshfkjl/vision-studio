@@ -126,6 +126,37 @@ class AnnotationImportTests(unittest.TestCase):
         self.assertEqual(saved["images"], [])
         self.assertFalse(annotation_path(project["id"], "plant.jpg").exists())
 
+    def test_saved_annotations_for_same_basename_nested_images_do_not_collide(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data_root = root / "data"
+            projects_root = data_root / "projects"
+            jobs_root = data_root / "jobs"
+            image_dir = root / "images"
+            (image_dir / "plot-a").mkdir(parents=True)
+            (image_dir / "plot-b").mkdir()
+            Image.new("RGB", (100, 80), "white").save(image_dir / "plot-a" / "leaf.jpg")
+            Image.new("RGB", (100, 80), "white").save(image_dir / "plot-b" / "leaf.jpg")
+
+            with patch("vision_studio.storage.DATA_ROOT", data_root), patch("vision_studio.storage.PROJECTS_ROOT", projects_root), patch("vision_studio.storage.JOBS_ROOT", jobs_root):
+                client = TestClient(app)
+                project = client.post(
+                    "/api/projects/import",
+                    json={"name": "nested duplicate names", "task_type": "detect", "image_dir": str(image_dir)},
+                ).json()
+                first = {"version": 1, "instances": [{"type": "box", "class_id": 0, "bbox": {"cx": 0.25, "cy": 0.4, "w": 0.2, "h": 0.3}}]}
+                second = {"version": 1, "instances": [{"type": "box", "class_id": 0, "bbox": {"cx": 0.75, "cy": 0.6, "w": 0.1, "h": 0.2}}]}
+                first_response = client.put(f"/api/projects/{project['id']}/annotations/plot-a/leaf.jpg", json=first)
+                second_response = client.put(f"/api/projects/{project['id']}/annotations/plot-b/leaf.jpg", json=second)
+                loaded_first = client.get(f"/api/projects/{project['id']}/annotations/plot-a/leaf.jpg").json()["annotation"]
+                loaded_second = client.get(f"/api/projects/{project['id']}/annotations/plot-b/leaf.jpg").json()["annotation"]
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(second_response.status_code, 200)
+        self.assertNotEqual(first_response.json()["annotation_path"], second_response.json()["annotation_path"])
+        self.assertEqual(loaded_first["instances"][0]["bbox"]["cx"], 0.25)
+        self.assertEqual(loaded_second["instances"][0]["bbox"]["cx"], 0.75)
+
     def test_existing_project_can_import_pascal_voc_directory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
