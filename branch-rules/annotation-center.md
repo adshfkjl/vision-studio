@@ -16,8 +16,18 @@ Read these files before changing code:
 Use this branch:
 
 ```powershell
-git checkout feature/project-center-annotation
+cd D:\projects\2\vision_studio_worktrees\annotation-center
 ```
+
+Assigned worktree:
+
+- `D:\projects\2\vision_studio_worktrees\annotation-center`
+
+Assigned branch:
+
+- `feature/project-center-annotation`
+
+Do not switch branches in this worktree. If another branch is needed, ask the controller conversation to create a new worktree.
 
 Parent branch:
 
@@ -91,6 +101,9 @@ Annotation changes are high-risk. Preserve these behaviors unless the user expli
 
 - Do not push.
 - Check git status before changing files.
+- Work only inside `D:\projects\2\vision_studio_worktrees\annotation-center`.
+- Do not use the controller worktree `D:\projects\2\vision_studio` for this branch.
+- Do not switch branches from this worktree.
 - Do not revert user changes or other branch work.
 - Keep edits tightly scoped to annotation.
 - If project-center navigation or project metadata must change, stop and ask the controller conversation first.
@@ -110,4 +123,3 @@ Report back with:
 ## Goal
 
 Make annotation reliable, predictable, and safe to evolve without breaking project management, training, or model workbench behavior.
-

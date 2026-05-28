@@ -88,3 +88,10 @@ For multi-conversation work, read the matching file under `branch-rules/`:
 - `branch-rules/project-center.md`
 - `branch-rules/annotation-center.md`
 - `branch-rules/model-workbench.md`
+
+Use separate git worktrees for parallel conversations:
+
+- `D:\projects\2\vision_studio` is the controller worktree on `main`.
+- `D:\projects\2\vision_studio_worktrees\project-center` is for `feature/project-center`.
+- `D:\projects\2\vision_studio_worktrees\annotation-center` is for `feature/project-center-annotation`.
+- `D:\projects\2\vision_studio_worktrees\model-workbench` is for `feature/model-workbench`.

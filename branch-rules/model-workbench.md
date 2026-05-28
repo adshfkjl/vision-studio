@@ -16,8 +16,18 @@ Read these files before changing code:
 Use this branch:
 
 ```powershell
-git checkout feature/model-workbench
+cd D:\projects\2\vision_studio_worktrees\model-workbench
 ```
+
+Assigned worktree:
+
+- `D:\projects\2\vision_studio_worktrees\model-workbench`
+
+Assigned branch:
+
+- `feature/model-workbench`
+
+Do not switch branches in this worktree. If another branch is needed, ask the controller conversation to create a new worktree.
 
 ## Scope
 
@@ -58,6 +68,9 @@ If a forbidden area must be changed, stop and report the reason to the controlle
 
 - Do not push.
 - Check git status before changing files.
+- Work only inside `D:\projects\2\vision_studio_worktrees\model-workbench`.
+- Do not use the controller worktree `D:\projects\2\vision_studio` for this branch.
+- Do not switch branches from this worktree.
 - Do not revert user changes or other branch work.
 - Keep edits tightly scoped to this branch's responsibility.
 - If the model workbench needs shared state or navigation changes in the project center, stop and ask the controller conversation first.
@@ -76,4 +89,3 @@ Report back with:
 ## Goal
 
 Keep the model workbench independent, clear, and ready to extend toward batch prediction and editable pre-labeling.
-

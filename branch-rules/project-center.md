@@ -17,8 +17,18 @@ Read these files before changing code:
 Use this branch:
 
 ```powershell
-git checkout feature/project-center
+cd D:\projects\2\vision_studio_worktrees\project-center
 ```
+
+Assigned worktree:
+
+- `D:\projects\2\vision_studio_worktrees\project-center`
+
+Assigned branch:
+
+- `feature/project-center`
+
+Do not switch branches in this worktree. If another branch is needed, ask the controller conversation to create a new worktree.
 
 ## Scope
 
@@ -61,6 +71,9 @@ If a forbidden area must be changed, stop and report the reason to the controlle
 
 - Do not push.
 - Check git status before changing files.
+- Work only inside `D:\projects\2\vision_studio_worktrees\project-center`.
+- Do not use the controller worktree `D:\projects\2\vision_studio` for this branch.
+- Do not switch branches from this worktree.
 - Do not revert user changes or other branch work.
 - Keep edits tightly scoped to this branch's responsibility.
 - If shared component extraction or broad frontend restructuring is needed, stop and ask the controller conversation first.
