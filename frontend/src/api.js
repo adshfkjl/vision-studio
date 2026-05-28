@@ -73,6 +73,7 @@ export const api = {
   materialize: (projectId) => request(`/api/projects/${projectId}/materialize`, { method: "POST" }),
   train: (projectId, payload) => request(`/api/projects/${projectId}/train`, { method: "POST", body: JSON.stringify(payload) }),
   predict: (payload) => request("/api/predict", { method: "POST", body: JSON.stringify(payload) }),
+  prelabel: (projectId, payload) => request(`/api/projects/${projectId}/prelabel`, { method: "POST", body: JSON.stringify(payload) }),
   job: (jobId) => request(`/api/jobs/${jobId}`),
   pauseJob: (jobId) => request(`/api/jobs/${jobId}/pause`, { method: "POST" }),
   resumeJob: (jobId) => request(`/api/jobs/${jobId}/resume`, { method: "POST" }),

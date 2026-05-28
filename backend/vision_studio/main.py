@@ -107,6 +107,16 @@ class PredictRequest(BaseModel):
     device: str = "auto"
 
 
+class PrelabelRequest(BaseModel):
+    model_path: str | None = None
+    job_id: str | None = None
+    artifact_name: str | None = None
+    conf: float = 0.25
+    iou: float = 0.7
+    imgsz: int | None = None
+    device: str = "auto"
+
+
 def blank_to_none(value: str | None) -> str | None:
     if value is None:
         return None
@@ -129,6 +139,33 @@ def save_uploaded_annotation(upload: UploadFile, target_dir: Path) -> Path:
     with target.open("wb") as fh:
         shutil.copyfileobj(upload.file, fh)
     return target
+
+
+def prediction_instances_to_annotation(instances: list[dict[str, Any]], schema: dict[str, Any]) -> dict[str, Any]:
+    task_type = schema["task_type"]
+    allowed_types = {
+        "detect": {"box", "bbox"},
+        "segment": {"polygon"},
+        "pose": {"pose"},
+        "classify": {"classification"},
+    }.get(task_type, set())
+    annotation = {"version": 1, "instances": []}
+    for instance in instances:
+        if instance.get("type") not in allowed_types:
+            continue
+        annotation["instances"].append(dict(instance))
+    return annotation
+
+
+def save_project_annotation(project: dict[str, Any], image_name: str, annotation: dict[str, Any]) -> None:
+    write_json(annotation_path(project["id"], image_name), annotation)
+    label_dir = yolo_labels_dir(project["id"])
+    label_dir.mkdir(parents=True, exist_ok=True)
+    (label_dir / f"{Path(image_name).stem}.txt").write_text(annotation_to_yolo(annotation, project["schema"]), encoding="utf-8")
+    for item in project.get("images", []):
+        if item["name"] == image_name:
+            item["annotated"] = bool(annotation.get("instances"))
+            break
 
 
 @app.on_event("startup")
@@ -511,6 +548,53 @@ def post_predict(req: PredictRequest) -> dict[str, Any]:
         raise HTTPException(404, str(exc)) from exc
     preview_name = Path(result["preview_path"]).name
     return {**result, "preview_url": f"/api/predictions/{preview_name}"}
+
+
+@app.post("/api/projects/{project_id}/prelabel")
+def post_prelabel(project_id: str, req: PrelabelRequest) -> dict[str, Any]:
+    try:
+        project = load_project(project_id)
+        model_path = resolve_model_path(req.model_path, req.job_id, req.artifact_name)
+        summary = {
+            "total_images": len(project.get("images", [])),
+            "processed": 0,
+            "saved": 0,
+            "skipped_existing": 0,
+            "empty_predictions": 0,
+            "failed": [],
+            "saved_annotations": [],
+        }
+        for item in project.get("images", []):
+            image_name = item["name"]
+            if image_has_label(project, image_name):
+                summary["skipped_existing"] += 1
+                continue
+            try:
+                result = run_prediction(
+                    model_path,
+                    project_image_path(project, image_name),
+                    conf=req.conf,
+                    iou=req.iou,
+                    imgsz=req.imgsz,
+                    device=req.device,
+                    schema=project["schema"],
+                )
+                summary["processed"] += 1
+                annotation = prediction_instances_to_annotation(result.get("instances", []), project["schema"])
+                if not annotation["instances"]:
+                    summary["empty_predictions"] += 1
+                    continue
+                save_project_annotation(project, image_name, annotation)
+                summary["saved"] += 1
+                summary["saved_annotations"].append(image_name)
+            except Exception as exc:
+                summary["failed"].append({"image": image_name, "error": str(exc)})
+        save_project(project)
+        return summary
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
 
 
 @app.get("/api/predictions/{preview_name}")

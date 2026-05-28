@@ -843,6 +843,36 @@ pre {
   object-fit: contain;
 }
 
+.prelabel-box {
+  align-items: end;
+  border: 1px solid #dbe4e1;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(240px, 1fr) auto;
+  padding: 10px;
+}
+
+.prelabel-summary {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.prelabel-summary span {
+  background: #f4f8f6;
+  border: 1px solid #dbe4e1;
+  border-radius: 6px;
+  color: #51615d;
+  padding: 8px 10px;
+}
+
+.prelabel-summary b {
+  color: #0f766e;
+  display: block;
+  font-size: 18px;
+}
+
 .result-list {
   display: grid;
   gap: 6px;
@@ -1058,6 +1088,11 @@ pre {
   }
 
   .prediction-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .prelabel-box,
+  .prelabel-summary {
     grid-template-columns: 1fr;
   }
 }

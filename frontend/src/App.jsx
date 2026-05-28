@@ -1818,9 +1818,12 @@ function ModelWorkbench({ projects, selectedProjectId, setSelectedProjectId, set
   const [modelPath, setModelPath] = useState("");
   const [imageName, setImageName] = useState("");
   const [imagePath, setImagePath] = useState("");
+  const [targetProjectId, setTargetProjectId] = useState(selectedProjectId || "");
   const [params, setParams] = useState({ conf: 0.25, iou: 0.7, imgsz: 960, device: "auto" });
   const [result, setResult] = useState(null);
+  const [prelabelResult, setPrelabelResult] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [prelabelBusy, setPrelabelBusy] = useState(false);
 
   const modelArtifacts = useMemo(() => {
     return jobs.flatMap((job) =>
@@ -1864,24 +1867,30 @@ function ModelWorkbench({ projects, selectedProjectId, setSelectedProjectId, set
     }
   }, [artifactKey, modelArtifacts]);
 
+  function buildModelPayload() {
+    const payload = {
+      conf: Number(params.conf),
+      iou: Number(params.iou),
+      imgsz: Number(params.imgsz) || null,
+      device: params.device || "auto",
+    };
+    if (modelSource === "artifact") {
+      const artifact = modelArtifacts.find((item) => item.key === artifactKey);
+      if (!artifact) throw new Error("请选择训练产物，或切换为本地模型路径。");
+      payload.job_id = artifact.jobId;
+      payload.artifact_name = artifact.name;
+    } else {
+      if (!modelPath) throw new Error("请输入本地模型路径，或切换为训练产物。");
+      payload.model_path = modelPath;
+    }
+    return payload;
+  }
+
   async function runPredict() {
     setBusy(true);
     setResult(null);
     try {
-      const payload = {
-        conf: Number(params.conf),
-        iou: Number(params.iou),
-        imgsz: Number(params.imgsz) || null,
-        device: params.device || "auto",
-      };
-      if (modelSource === "artifact") {
-        const artifact = modelArtifacts.find((item) => item.key === artifactKey);
-        if (!artifact) throw new Error("请选择训练产物，或切换为本地模型路径。");
-        payload.job_id = artifact.jobId;
-        payload.artifact_name = artifact.name;
-      } else {
-        payload.model_path = modelPath;
-      }
+      const payload = buildModelPayload();
       if (imageSource === "project") {
         if (!projectId || !imageName) throw new Error("请选择项目图片，或切换为本地图片路径。");
         payload.project_id = projectId;
@@ -1899,8 +1908,25 @@ function ModelWorkbench({ projects, selectedProjectId, setSelectedProjectId, set
     }
   }
 
+  async function runPrelabel() {
+    setPrelabelBusy(true);
+    setPrelabelResult(null);
+    try {
+      if (!targetProjectId) throw new Error("请选择要预标注的目标项目。");
+      const next = await api.prelabel(targetProjectId, buildModelPayload());
+      setPrelabelResult(next);
+      setMessage(`预标注完成：写入 ${next.saved || 0} 张，跳过已有 ${next.skipped_existing || 0} 张`);
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setPrelabelBusy(false);
+    }
+  }
+
   const selectedProject = projects.find((project) => project.id === projectId);
+  const targetProject = projects.find((project) => project.id === targetProjectId);
   const canRun = (modelSource === "path" ? modelPath : artifactKey) && (imageSource === "path" ? imagePath : projectId && imageName);
+  const canPrelabel = targetProjectId && (modelSource === "path" ? modelPath : artifactKey);
 
   return (
     <section className="model-page workflow">
@@ -1908,12 +1934,12 @@ function ModelWorkbench({ projects, selectedProjectId, setSelectedProjectId, set
         <div>
           <span className="eyebrow">Model Workbench</span>
           <h2>模型工作台</h2>
-          <p>独立于项目标注与训练流程，用训练产物或本地模型做单图预测。</p>
+          <p>独立于项目标注与训练流程，用训练产物或本地模型做单图预测和项目预标注。</p>
         </div>
         <div className="hero-metrics">
           <span><b>{projects.length}</b>项目</span>
           <span><b>{modelArtifacts.length}</b>可用产物</span>
-          <span><b>{result?.summary?.total ?? "-"}</b>预测目标</span>
+          <span><b>{prelabelResult?.saved ?? result?.summary?.total ?? "-"}</b>写入/目标</span>
         </div>
       </div>
 
@@ -1994,6 +2020,30 @@ function ModelWorkbench({ projects, selectedProjectId, setSelectedProjectId, set
           <div className="button-row">
             <button className="primary" onClick={runPredict} disabled={!canRun || busy}><ImageIcon size={15} />{busy ? "预测中" : "开始预测"}</button>
           </div>
+
+          <div className="workflow-step">
+            <div>
+              <strong>3. 项目预标注</strong>
+              <span>{targetProject ? `将当前模型用于 ${targetProject.name}，只写入未标注图片。` : "选择目标项目后，可用当前模型批量生成可人工调整的初始标注。"}</span>
+            </div>
+          </div>
+          <div className="prelabel-box">
+            <label>目标项目
+              <select value={targetProjectId} onChange={(e) => setTargetProjectId(e.target.value)}>
+                <option value="">选择要预标注的项目</option>
+                {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+              </select>
+            </label>
+            <button onClick={runPrelabel} disabled={!canPrelabel || prelabelBusy}><GitBranch size={15} />{prelabelBusy ? "预标注中" : "开始预标注"}</button>
+          </div>
+          {prelabelResult && (
+            <div className="prelabel-summary">
+              <span><b>{prelabelResult.saved || 0}</b>写入</span>
+              <span><b>{prelabelResult.skipped_existing || 0}</b>跳过已有</span>
+              <span><b>{prelabelResult.empty_predictions || 0}</b>无目标</span>
+              <span><b>{prelabelResult.failed?.length || 0}</b>失败</span>
+            </div>
+          )}
         </section>
 
         <section className="panel prediction-results">
