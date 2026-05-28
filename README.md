@@ -86,4 +86,5 @@ For multi-conversation work, read the matching file under `branch-rules/`:
 
 - `branch-rules/controller.md`
 - `branch-rules/project-center.md`
+- `branch-rules/annotation-center.md`
 - `branch-rules/model-workbench.md`

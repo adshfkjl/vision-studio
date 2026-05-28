@@ -2,6 +2,8 @@
 
 This branch owns the Vision Studio project center.
 
+Annotation work is delegated to the child branch `feature/project-center-annotation`. The project center branch should not directly change annotation canvas behavior unless the controller conversation explicitly asks it to.
+
 ## Required Reading
 
 Read these files before changing code:
@@ -46,6 +48,7 @@ Do not modify:
 
 - Annotation canvas interaction logic.
 - bbox, polygon, or pose annotation behavior.
+- Annotation center tool behavior delegated to `feature/project-center-annotation`.
 - Training workflow.
 - Model workbench.
 - Model prediction.
@@ -76,4 +79,3 @@ Report back with:
 ## Goal
 
 Make the project center clearer, more stable, and easier to extend for multi-project and multi-model workflows.
-

@@ -10,6 +10,7 @@ Read these files before planning or merging work:
 - `D:\projects\2\vision_studio\README.md`
 - `D:\projects\2\vision_studio\AGENTS.md`
 - `D:\projects\2\vision_studio\branch-rules\project-center.md`
+- `D:\projects\2\vision_studio\branch-rules\annotation-center.md`
 - `D:\projects\2\vision_studio\branch-rules\model-workbench.md`
 
 ## Branch
@@ -21,6 +22,7 @@ Default branch:
 Feature branches currently delegated:
 
 - `feature/project-center`
+- `feature/project-center-annotation`
 - `feature/model-workbench`
 
 ## Responsibilities
@@ -33,6 +35,7 @@ The controller owns:
 - Cross-branch coordination.
 - Reviewing delegated branch results.
 - Merging `feature/project-center`.
+- Merging `feature/project-center-annotation`.
 - Merging `feature/model-workbench`.
 - Resolving merge conflicts.
 - Startup issues.
@@ -70,4 +73,3 @@ After controller work, report:
 - Files changed.
 - Verification commands and results.
 - Remaining risks or manual checks.
-
