@@ -81,3 +81,9 @@ $env:VISION_STUDIO_API_PROXY_TARGET = "http://127.0.0.1:8010"
 After each change, update `README.md` when behavior, usage, or project structure changes, then stage and commit the change locally.
 
 Read `agent.md` before making future changes. It records project handoff notes and reusable-workflow candidates from the local `D:\projects\2` conversation sync files.
+
+For multi-conversation work, read the matching file under `branch-rules/`:
+
+- `branch-rules/controller.md`
+- `branch-rules/project-center.md`
+- `branch-rules/model-workbench.md`
