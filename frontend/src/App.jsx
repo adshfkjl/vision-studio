@@ -1809,6 +1809,7 @@ function TrainingPage({ project, schema, tasks, validation, refreshValidation, s
 }
 
 function ModelWorkbench({ projects, selectedProjectId, setSelectedProjectId, setMessage }) {
+  const [workbenchMode, setWorkbenchMode] = useState("predict");
   const [projectId, setProjectId] = useState(selectedProjectId || "");
   const [images, setImages] = useState([]);
   const [jobs, setJobs] = useState([]);
@@ -1927,6 +1928,7 @@ function ModelWorkbench({ projects, selectedProjectId, setSelectedProjectId, set
   const targetProject = projects.find((project) => project.id === targetProjectId);
   const canRun = (modelSource === "path" ? modelPath : artifactKey) && (imageSource === "path" ? imagePath : projectId && imageName);
   const canPrelabel = targetProjectId && (modelSource === "path" ? modelPath : artifactKey);
+  const metricValue = workbenchMode === "prelabel" ? (prelabelResult?.saved ?? "-") : (result?.summary?.total ?? "-");
 
   return (
     <section className="model-page workflow">
@@ -1939,10 +1941,16 @@ function ModelWorkbench({ projects, selectedProjectId, setSelectedProjectId, set
         <div className="hero-metrics">
           <span><b>{projects.length}</b>项目</span>
           <span><b>{modelArtifacts.length}</b>可用产物</span>
-          <span><b>{prelabelResult?.saved ?? result?.summary?.total ?? "-"}</b>写入/目标</span>
+          <span><b>{metricValue}</b>{workbenchMode === "prelabel" ? "写入" : "预测目标"}</span>
         </div>
       </div>
 
+      <div className="mode-tabs model-mode-tabs">
+        <button className={workbenchMode === "predict" ? "active" : ""} onClick={() => setWorkbenchMode("predict")}><ImageIcon size={15} />预测</button>
+        <button className={workbenchMode === "prelabel" ? "active" : ""} onClick={() => setWorkbenchMode("prelabel")}><GitBranch size={15} />预标注</button>
+      </div>
+
+      {workbenchMode === "predict" ? (
       <div className="prediction-layout">
         <section className="panel workflow">
           <h2><Brain size={16} />预测配置</h2>
@@ -2020,30 +2028,6 @@ function ModelWorkbench({ projects, selectedProjectId, setSelectedProjectId, set
           <div className="button-row">
             <button className="primary" onClick={runPredict} disabled={!canRun || busy}><ImageIcon size={15} />{busy ? "预测中" : "开始预测"}</button>
           </div>
-
-          <div className="workflow-step">
-            <div>
-              <strong>3. 项目预标注</strong>
-              <span>{targetProject ? `将当前模型用于 ${targetProject.name}，只写入未标注图片。` : "选择目标项目后，可用当前模型批量生成可人工调整的初始标注。"}</span>
-            </div>
-          </div>
-          <div className="prelabel-box">
-            <label>目标项目
-              <select value={targetProjectId} onChange={(e) => setTargetProjectId(e.target.value)}>
-                <option value="">选择要预标注的项目</option>
-                {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-              </select>
-            </label>
-            <button onClick={runPrelabel} disabled={!canPrelabel || prelabelBusy}><GitBranch size={15} />{prelabelBusy ? "预标注中" : "开始预标注"}</button>
-          </div>
-          {prelabelResult && (
-            <div className="prelabel-summary">
-              <span><b>{prelabelResult.saved || 0}</b>写入</span>
-              <span><b>{prelabelResult.skipped_existing || 0}</b>跳过已有</span>
-              <span><b>{prelabelResult.empty_predictions || 0}</b>无目标</span>
-              <span><b>{prelabelResult.failed?.length || 0}</b>失败</span>
-            </div>
-          )}
         </section>
 
         <section className="panel prediction-results">
@@ -2072,6 +2056,103 @@ function ModelWorkbench({ projects, selectedProjectId, setSelectedProjectId, set
           )}
         </section>
       </div>
+      ) : (
+      <div className="prelabel-layout">
+        <section className="panel workflow">
+          <h2><GitBranch size={16} />预标注配置</h2>
+          <div className="workflow-step">
+            <div>
+              <strong>1. 选择模型</strong>
+              <span>可从任意项目训练产物选择模型，也可输入后端可访问的本地 .pt 或 .onnx。</span>
+            </div>
+          </div>
+          <div className="grid-4">
+            <label>模型项目
+              <select value={projectId} onChange={(e) => { setProjectId(e.target.value); setSelectedProjectId(e.target.value); }}>
+                <option value="">选择项目</option>
+                {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+              </select>
+            </label>
+            <label>模型来源
+              <select value={modelSource} onChange={(e) => setModelSource(e.target.value)}>
+                <option value="artifact">训练产物</option>
+                <option value="path">本地模型路径</option>
+              </select>
+            </label>
+            {modelSource === "artifact" ? (
+              <label>训练产物
+                <select value={artifactKey} onChange={(e) => setArtifactKey(e.target.value)}>
+                  <option value="">选择 best.pt / last.pt / onnx</option>
+                  {modelArtifacts.map((artifact) => <option key={artifact.key} value={artifact.key}>{artifact.label}</option>)}
+                </select>
+              </label>
+            ) : (
+              <label>模型路径
+                <input value={modelPath} onChange={(e) => setModelPath(e.target.value)} placeholder="D:\models\best.pt" />
+              </label>
+            )}
+            <label>Device
+              <input value={params.device} onChange={(e) => setParams({ ...params, device: e.target.value })} />
+            </label>
+          </div>
+
+          <div className="workflow-step">
+            <div>
+              <strong>2. 选择目标项目</strong>
+              <span>{targetProject ? `目标项目：${targetProject.name}。已有标注会跳过，只写入空图片。` : "目标项目可以和模型来源项目不同。"}</span>
+            </div>
+          </div>
+          <div className="prelabel-box">
+            <label>目标项目
+              <select value={targetProjectId} onChange={(e) => setTargetProjectId(e.target.value)}>
+                <option value="">选择要预标注的项目</option>
+                {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+              </select>
+            </label>
+            <button className="primary" onClick={runPrelabel} disabled={!canPrelabel || prelabelBusy}><GitBranch size={15} />{prelabelBusy ? "预标注中" : "开始预标注"}</button>
+          </div>
+
+          <div className="grid-4">
+            <label>Conf
+              <input type="number" min="0" max="1" step="0.01" value={params.conf} onChange={(e) => setParams({ ...params, conf: Number(e.target.value) })} />
+            </label>
+            <label>IoU
+              <input type="number" min="0" max="1" step="0.01" value={params.iou} onChange={(e) => setParams({ ...params, iou: Number(e.target.value) })} />
+            </label>
+            <label>Imgsz
+              <input type="number" value={params.imgsz} onChange={(e) => setParams({ ...params, imgsz: Number(e.target.value) })} />
+            </label>
+          </div>
+        </section>
+
+        <section className="panel prelabel-results">
+          <h2><GitBranch size={16} />预标注结果</h2>
+          {!prelabelResult ? (
+            <div className="empty-state"><GitBranch size={32} />等待预标注任务</div>
+          ) : (
+            <>
+              <div className="prelabel-summary">
+                <span><b>{prelabelResult.saved || 0}</b>写入</span>
+                <span><b>{prelabelResult.skipped_existing || 0}</b>跳过已有</span>
+                <span><b>{prelabelResult.empty_predictions || 0}</b>无目标</span>
+                <span><b>{prelabelResult.failed?.length || 0}</b>失败</span>
+              </div>
+              {(prelabelResult.saved_annotations || []).length > 0 && (
+                <div className="result-list">
+                  {prelabelResult.saved_annotations.map((name) => (
+                    <div className="result-row" key={name}>
+                      <strong>{name}</strong>
+                      <span>已写入</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {(prelabelResult.failed || []).length > 0 && <pre>{JSON.stringify(prelabelResult.failed, null, 2)}</pre>}
+            </>
+          )}
+        </section>
+      </div>
+      )}
     </section>
   );
 }

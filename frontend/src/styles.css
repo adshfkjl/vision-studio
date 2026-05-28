@@ -816,14 +816,48 @@ pre {
   margin-bottom: 0;
 }
 
+.mode-tabs {
+  background: #ffffff;
+  border: 1px solid #d8e0dd;
+  border-radius: 8px;
+  display: inline-flex;
+  gap: 4px;
+  padding: 6px;
+}
+
+.model-mode-tabs {
+  margin: 12px 0 0;
+}
+
+.mode-tabs button {
+  border-color: transparent;
+  min-width: 110px;
+}
+
+.mode-tabs button.active {
+  background: #e8f3ef;
+  border-color: #9fc9c0;
+  color: #126b61;
+}
+
 .prediction-layout {
   display: grid;
   gap: 12px;
   grid-template-columns: minmax(480px, 1fr) minmax(360px, 0.75fr);
 }
 
+.prelabel-layout {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(520px, 1fr) minmax(360px, 0.65fr);
+}
+
 .prediction-results {
   min-height: 560px;
+}
+
+.prelabel-results {
+  min-height: 360px;
 }
 
 .prediction-preview {
@@ -1087,7 +1121,8 @@ pre {
     grid-template-columns: 1fr 1fr;
   }
 
-  .prediction-layout {
+  .prediction-layout,
+  .prelabel-layout {
     grid-template-columns: 1fr;
   }
 
