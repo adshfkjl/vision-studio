@@ -1,5 +1,9 @@
-const RAW_API_BASE = import.meta.env.VITE_API_BASE?.trim() || "";
-const API_BASE = RAW_API_BASE.replace(/\/+$/, "");
+export function normalizeApiBase(value = "") {
+  return String(value || "").trim().replace(/\/+$/, "");
+}
+
+const RAW_API_BASE = import.meta.env?.VITE_API_BASE || "";
+const API_BASE = normalizeApiBase(RAW_API_BASE);
 
 function apiPath(path) {
   return `${API_BASE}${path}`;

@@ -6,14 +6,20 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5173",
     "build": "vite build",
-    "preview": "vite preview --host 127.0.0.1 --port 4173"
+    "preview": "vite preview --host 127.0.0.1 --port 4173",
+    "test": "npm run test:unit && npm run test:backend",
+    "test:unit": "node --test src/api.test.js",
+    "test:backend": "node tests/run-backend-tests.mjs",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^4.3.0",
-    "vite": "^5.4.0",
+    "lucide-react": "^0.468.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "lucide-react": "^0.468.0"
+    "vite": "^5.4.0"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "@playwright/test": "^1.60.0"
+  }
 }

@@ -49,6 +49,27 @@ Open `http://localhost:5173`.
 
 If Vite picks another free port such as `5174`, that is fine now. The frontend sends API requests to the current origin by default and the dev server proxies `/api` to the backend.
 
+## Regression Tests
+
+The minimal regression suite is driven from the frontend npm scripts:
+
+```powershell
+cd <path-to>\vision_studio\frontend
+npm test
+npm run test:e2e
+```
+
+- `npm run test:unit` runs Node's built-in test runner against small frontend API helpers. These tests protect same-origin API routing, custom API base normalization, and encoded image URLs.
+- `npm run test:backend` runs the existing FastAPI `unittest` suite through a Node wrapper. The backend tests use temporary directories and patched storage roots, so they do not connect to a production database or production data path.
+- `npm run test:e2e` runs a Playwright project-center smoke test. It mocks `/api/projects` and `/api/tasks`, so the browser test verifies the startup UI without connecting to a real backend database.
+
+If Playwright was freshly installed on a new machine, install its browser once:
+
+```powershell
+cd <path-to>\vision_studio\frontend
+npx playwright install chromium
+```
+
 On the annotation canvas, use the mouse wheel to zoom around the cursor and hold the left button to pan the image. Click-based marking still works on the canvas itself. Annotation shortcuts: `V`/`M` mouse mode, `B` box mode, `P` polygon mode, `K` keypoint mode, `[`/`]` previous or next keypoint, `+`/`-` zoom, `0` reset zoom, arrow keys switch images, `Ctrl+S` saves, and `Ctrl+Z`/`Ctrl+Y` undo or redo.
 
 Use the project center import form to create a project from a backend-accessible image directory, or choose local image files/folders in the browser and upload them into a new project. Annotation files can be chosen directly from the browser or entered as backend-accessible paths. After entering a project, use the `数据/导入` page to import or rematch annotations into that current project. Supported annotation sources include YOLO TXT label folders, CVAT XML, COCO JSON, LabelMe JSON, and Pascal VOC XML; matching uses exact image names, basenames, or stems.
