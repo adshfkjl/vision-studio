@@ -644,5 +644,6 @@ def import_current_demo() -> dict[str, Any]:
     return import_project(req)
 
 
-if FRONTEND_DIST.is_dir():
-    app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="frontend-assets")
+FRONTEND_ASSETS = FRONTEND_DIST / "assets"
+if FRONTEND_ASSETS.is_dir():
+    app.mount("/assets", StaticFiles(directory=str(FRONTEND_ASSETS)), name="frontend-assets")
