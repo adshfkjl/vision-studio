@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
     "test": "npm run test:unit && npm run test:backend",
-    "test:unit": "node --test src/api.test.js",
+    "test:unit": "node --test src/api.test.js src/annotationTools.test.js",
     "test:backend": "node tests/run-backend-tests.mjs",
     "test:e2e": "playwright test"
   },
