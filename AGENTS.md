@@ -1,5 +1,6 @@
 # Vision Studio Working Rules
 
+- Claude Code should read `CLAUDE.md`; Codex should read this file. Both entry files point to the same project rules.
 - Treat `README.md` as a required part of every change.
 - After any code or content change, update `README.md` if the change affects setup, usage, structure, or behavior.
 - Keep the local git repository in sync after each change by reviewing the diff, staging the work, and creating a local commit.

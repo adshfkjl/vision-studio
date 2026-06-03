@@ -6,6 +6,10 @@ frontend/dist/
 frontend/test-results/
 frontend/playwright-report/
 vision_studio_data/
+.claude/reviews/
+.claude/.upgrade-backups/
+.claude/.upgrade-tmp/
+node_modules/
 *.log
 *.err.log
 *.pt

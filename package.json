@@ -1,0 +1,19 @@
+{
+  "name": "vision-studio-harness",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Project-level Harness Starter integration for Vision Studio.",
+  "harnessStarter": {
+    "repository": "chenklein26-maker/Harness-Starter",
+    "ref": "main"
+  },
+  "scripts": {
+    "harness:check": "node scripts/check.mjs",
+    "harness:upgrade": "node scripts/upgrade.mjs",
+    "test": "npm --prefix frontend test",
+    "test:e2e": "npm --prefix frontend run test:e2e",
+    "build": "npm --prefix frontend run build"
+  }
+}
+

@@ -59,6 +59,16 @@ npm test
 npm run test:e2e
 ```
 
+The repository root also provides wrapper scripts for Harness-managed sessions:
+
+```powershell
+cd <path-to>\vision_studio
+npm test
+npm run test:e2e
+npm run build
+npm run harness:check
+```
+
 - `npm run test:unit` runs Node's built-in test runner against small frontend API helpers. These tests protect same-origin API routing, custom API base normalization, and encoded image URLs.
 - `npm run test:backend` runs the existing FastAPI `unittest` suite through a Node wrapper. The backend tests use temporary directories and patched storage roots, so they do not connect to a production database or production data path.
 - `npm run test:e2e` runs a Playwright project-center smoke test. It mocks `/api/projects` and `/api/tasks`, so the browser test verifies the startup UI without connecting to a real backend database.
@@ -100,6 +110,14 @@ $env:VISION_STUDIO_API_PROXY_TARGET = "http://127.0.0.1:8010"
 ## Working Rule
 
 After each change, update `README.md` when behavior, usage, or project structure changes, then stage and commit the change locally.
+
+This project is adapted to `chenklein26-maker/Harness-Starter` for Claude Code sessions:
+
+- `CLAUDE.md` is the Claude entry file and points to the same project rules as `AGENTS.md`.
+- `.claude/settings.json` registers PreToolUse, SessionStart, PreCompact, and Stop hooks.
+- `.claude/skills/harness-init` and `.claude/skills/harness-mode` are copied from Harness Starter.
+- `.lsp.json` declares JavaScript/React and Python language servers.
+- `npm run harness:check` runs the local Harness health check.
 
 Read `agent.md` before making future changes. It records project handoff notes and reusable-workflow candidates from the local `D:\projects\2` conversation sync files.
 
