@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from vision_studio.main import app
-from vision_studio.storage import annotation_path, read_json, write_json, yolo_labels_dir
+from vision_studio.storage import annotation_path, generated_yolo_label_path, read_json, write_json
 
 
 def write_project(projects_root: Path, image_path: Path) -> None:
@@ -228,7 +228,7 @@ class PredictionApiTests(unittest.TestCase):
                 )
                 saved_existing = read_json(annotation_path("sample-project", "existing.jpg"))
                 saved_empty = read_json(annotation_path("sample-project", "empty.jpg"))
-                yolo_text = (yolo_labels_dir("sample-project") / "empty.txt").read_text(encoding="utf-8")
+                yolo_text = generated_yolo_label_path("sample-project", "empty.jpg").read_text(encoding="utf-8")
 
         self.assertEqual(response.status_code, 200)
         data = response.json()

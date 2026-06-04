@@ -159,9 +159,9 @@ def prediction_instances_to_annotation(instances: list[dict[str, Any]], schema: 
 
 def save_project_annotation(project: dict[str, Any], image_name: str, annotation: dict[str, Any]) -> None:
     write_json(annotation_path(project["id"], image_name), annotation)
-    label_dir = yolo_labels_dir(project["id"])
-    label_dir.mkdir(parents=True, exist_ok=True)
-    (label_dir / f"{Path(image_name).stem}.txt").write_text(annotation_to_yolo(annotation, project["schema"]), encoding="utf-8")
+    label_path = generated_yolo_label_path(project["id"], image_name)
+    label_path.parent.mkdir(parents=True, exist_ok=True)
+    label_path.write_text(annotation_to_yolo(annotation, project["schema"]), encoding="utf-8")
     for item in project.get("images", []):
         if item["name"] == image_name:
             item["annotated"] = bool(annotation.get("instances"))
