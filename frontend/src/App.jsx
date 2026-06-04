@@ -22,6 +22,7 @@ import {
   ZoomOut,
 } from "lucide-react";
 import { api, apiBase, apiUrl, artifactUrl, imageUrl } from "./api.js";
+import { canAdjustExistingAnnotation, canResizeBbox, shouldShowBboxResizeHandles } from "./annotationTools.js";
 
 const blankImport = {
   name: "current-pose",
@@ -686,7 +687,7 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
   }
 
   function startKeypointDrag(instanceIndex, name, evt) {
-    if (tool === "mouse") return;
+    if (!canAdjustExistingAnnotation(tool)) return;
     evt.stopPropagation();
     evt.currentTarget.setPointerCapture?.(evt.pointerId);
     selectOnly({ type: "keypoint", instanceIndex, key: name });
@@ -694,7 +695,7 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
   }
 
   function startPolygonPointDrag(instanceIndex, pointIndex, evt) {
-    if (tool === "mouse") return;
+    if (!canAdjustExistingAnnotation(tool)) return;
     evt.stopPropagation();
     evt.currentTarget.setPointerCapture?.(evt.pointerId);
     selectOnly({ type: "polygon-point", instanceIndex, key: pointIndex });
@@ -702,7 +703,7 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
   }
 
   function startBboxDrag(instanceIndex, box, evt) {
-    if (tool === "mouse") return;
+    if (!canAdjustExistingAnnotation(tool)) return;
     evt.stopPropagation();
     if (schema.task_type === "pose" && tool === "keypoint") {
       const pt = pointToSvg(evt, svgRef.current);
@@ -726,7 +727,7 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
 
   function startBboxResize(instanceIndex, box, handle, evt) {
     if (evt.button !== 0) return;
-    if (tool !== "bbox") return;
+    if (!canResizeBbox(tool)) return;
     evt.stopPropagation();
     evt.currentTarget.setPointerCapture?.(evt.pointerId);
     selectOnly({ type: "bbox", instanceIndex, key: "bbox" });
@@ -952,7 +953,7 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
                   onPointerDown={(evt) => startBboxDrag(instanceIndex, box, evt)}
                   onContextMenu={(evt) => handleContextMenu({ type: "bbox", instanceIndex, key: "bbox" }, evt)}
                 />
-                {selectedBox && tool === "bbox" && (
+                {shouldShowBboxResizeHandles({ selected: selectedBox, tool }) && (
                   <g className="bbox-resize-handles">
                     {BBOX_RESIZE_HANDLES.map(({ handle, cursor }) => {
                       const point = bboxResizePoint(box, handle);

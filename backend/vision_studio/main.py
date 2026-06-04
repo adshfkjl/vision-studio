@@ -24,6 +24,7 @@ from .storage import (
     annotation_path,
     annotations_dir,
     ensure_roots,
+    generated_yolo_label_path,
     image_size,
     iter_images,
     list_projects,
@@ -34,7 +35,6 @@ from .storage import (
     save_project,
     unique_project_id,
     write_json,
-    yolo_labels_dir,
 )
 from .yolo import annotation_for_image, annotation_to_yolo, default_schema, image_has_label, schema_from_data_yaml
 from .tasks import available_tasks, default_schema_for_task, get_task
@@ -398,7 +398,7 @@ def delete_image(project_id: str, image_name: str) -> dict[str, Any]:
     ann_path = annotation_path(project_id, image_name)
     if ann_path.exists():
         ann_path.unlink()
-    label_path = yolo_labels_dir(project_id) / f"{Path(image_name).stem}.txt"
+    label_path = generated_yolo_label_path(project_id, image_name)
     if label_path.exists():
         label_path.unlink()
     save_project(project)
@@ -425,9 +425,9 @@ def put_annotation(project_id: str, image_name: str, annotation: dict[str, Any])
     project = load_project(project_id)
     path = annotation_path(project_id, image_name)
     write_json(path, annotation)
-    label_dir = yolo_labels_dir(project_id)
-    label_dir.mkdir(parents=True, exist_ok=True)
-    (label_dir / f"{Path(image_name).stem}.txt").write_text(
+    label_path = generated_yolo_label_path(project_id, image_name)
+    label_path.parent.mkdir(parents=True, exist_ok=True)
+    label_path.write_text(
         annotation_to_yolo(annotation, project["schema"]),
         encoding="utf-8",
     )
