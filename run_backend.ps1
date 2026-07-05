@@ -44,6 +44,11 @@ except Exception as exc:
 
 Set-Location $backend
 
+if (-not $forceCpu) {
+    $env:VISION_STUDIO_USE_BUNDLED_DEPS = "0"
+    $env:PYTHONPATH = "$backend"
+}
+
 if (-not $forceCpu -and (Test-VisionStudioGpuEnv -EnvName $gpuEnv)) {
     Write-Host "[Vision Studio] Starting backend with GPU conda env '$gpuEnv'."
     $env:VISION_STUDIO_USE_BUNDLED_DEPS = "0"
