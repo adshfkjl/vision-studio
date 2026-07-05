@@ -38,6 +38,12 @@ async function multipartRequest(path, fields = {}, files = {}) {
     if (value !== undefined && value !== null && value !== "") body.append(key, value);
   });
   Object.entries(files).forEach(([key, value]) => {
+    if (Array.isArray(value)) {
+      value.forEach((item) => {
+        if (item) body.append(key, item);
+      });
+      return;
+    }
     if (value) body.append(key, value);
   });
   const response = await fetch(apiPath(path), { method: "POST", body });
@@ -57,13 +63,13 @@ export const api = {
   jobs: (projectId, kind = "") => request(`/api/jobs?project_id=${encodeURIComponent(projectId)}${kind ? `&kind=${encodeURIComponent(kind)}` : ""}`),
   createProject: (payload) => request("/api/projects", { method: "POST", body: JSON.stringify(payload) }),
   importProject: (payload) => request("/api/projects/import", { method: "POST", body: JSON.stringify(payload) }),
-  importProjectFile: (payload, annotationFile) => multipartRequest("/api/projects/import-file", payload, { annotation_file: annotationFile }),
+  importProjectFile: (payload, annotationFiles) => multipartRequest("/api/projects/import-file", payload, { annotation_files: annotationFiles }),
   importCurrent: () => request("/api/demo/import-current", { method: "POST" }),
   images: (projectId) => request(`/api/projects/${projectId}/images?limit=500`),
   uploadImages: (projectId, files) => uploadRequest(`/api/projects/${projectId}/images/upload`, files),
   deleteImage: (projectId, imageName) => request(`/api/projects/${projectId}/images/${encodeURIComponent(imageName)}`, { method: "DELETE" }),
   importAnnotations: (projectId, payload) => request(`/api/projects/${projectId}/annotations/import`, { method: "POST", body: JSON.stringify(payload) }),
-  importAnnotationFile: (projectId, payload, annotationFile) => multipartRequest(`/api/projects/${projectId}/annotations/import-file`, payload, { annotation_file: annotationFile }),
+  importAnnotationFile: (projectId, payload, annotationFiles) => multipartRequest(`/api/projects/${projectId}/annotations/import-file`, payload, { annotation_files: annotationFiles }),
   schema: (projectId) => request(`/api/projects/${projectId}/schema`),
   saveSchema: (projectId, schema) => request(`/api/projects/${projectId}/schema`, { method: "PUT", body: JSON.stringify(schema) }),
   validation: (projectId) => request(`/api/projects/${projectId}/validation`),

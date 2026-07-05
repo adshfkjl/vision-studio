@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
@@ -168,6 +169,19 @@ def save_project_annotation(project: dict[str, Any], image_name: str, annotation
             break
 
 
+def save_uploaded_annotations(uploads: list[UploadFile], target_dir: Path) -> Path:
+    uploads = [upload for upload in uploads if upload is not None]
+    if not uploads:
+        raise HTTPException(400, "No annotation files uploaded")
+    if len(uploads) == 1:
+        return save_uploaded_annotation(uploads[0], target_dir)
+    batch_dir = target_dir / f"batch-{uuid4().hex[:8]}"
+    batch_dir.mkdir(parents=True, exist_ok=True)
+    for upload in uploads:
+        save_uploaded_annotation(upload, batch_dir)
+    return batch_dir
+
+
 @app.on_event("startup")
 def startup() -> None:
     ensure_roots()
@@ -250,7 +264,7 @@ def import_project(req: ImportProjectRequest) -> dict[str, Any]:
         raise HTTPException(400, f"Image directory not found: {req.image_dir}")
     if label_dir is not None and not label_dir.is_dir():
         raise HTTPException(400, f"Label directory not found: {req.label_dir}")
-    if annotation_file is not None and not annotation_file.is_file():
+    if annotation_file is not None and not annotation_file.exists():
         raise HTTPException(400, f"Annotation file not found: {req.annotation_file}")
 
     project_id = unique_project_id(req.name)
@@ -315,9 +329,15 @@ def import_project_file(
     label_dir: str | None = Form(None),
     data_yaml: str | None = Form(None),
     annotation_format: str | None = Form(None),
-    annotation_file: UploadFile = File(...),
+    annotation_file: UploadFile | None = File(None),
+    annotation_files: list[UploadFile] | None = File(None),
 ) -> dict[str, Any]:
-    annotation_path = save_uploaded_annotation(annotation_file, storage_module.DATA_ROOT / "import_uploads")
+    uploads = [upload for upload in (annotation_files or []) if upload is not None]
+    if annotation_file is not None:
+        uploads.append(annotation_file)
+    if not uploads:
+        raise HTTPException(400, "Annotation file not found")
+    annotation_path = save_uploaded_annotations(uploads, storage_module.DATA_ROOT / "import_uploads")
     req = ImportProjectRequest(
         name=name,
         task_type=task_type,
@@ -459,9 +479,15 @@ def import_project_annotations(project_id: str, req: ImportAnnotationsRequest) -
 def import_project_annotation_file(
     project_id: str,
     annotation_format: str | None = Form(None),
-    annotation_file: UploadFile = File(...),
+    annotation_file: UploadFile | None = File(None),
+    annotation_files: list[UploadFile] | None = File(None),
 ) -> dict[str, Any]:
-    annotation_source = save_uploaded_annotation(annotation_file, project_dir(project_id) / "imports")
+    uploads = [upload for upload in (annotation_files or []) if upload is not None]
+    if annotation_file is not None:
+        uploads.append(annotation_file)
+    if not uploads:
+        raise HTTPException(400, "Annotation file not found")
+    annotation_source = save_uploaded_annotations(uploads, project_dir(project_id) / "imports")
     req = ImportAnnotationsRequest(annotation_path=str(annotation_source), annotation_format=blank_to_none(annotation_format))
     return import_project_annotations(project_id, req)
 

@@ -280,6 +280,44 @@ class AnnotationImportTests(unittest.TestCase):
         self.assertEqual(response.json()["import_summary"]["annotation_format"], "cvat_xml")
         self.assertEqual(ann["instances"][0]["type"], "pose")
 
+    def test_existing_project_can_import_multiple_uploaded_yolo_label_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data_root = root / "data"
+            projects_root = data_root / "projects"
+            jobs_root = data_root / "jobs"
+            image_dir = root / "images"
+            image_dir.mkdir()
+            Image.new("RGB", (100, 80), "white").save(image_dir / "plant.jpg")
+            Image.new("RGB", (100, 80), "white").save(image_dir / "root.jpg")
+
+            with patch("vision_studio.storage.DATA_ROOT", data_root), patch("vision_studio.storage.PROJECTS_ROOT", projects_root), patch("vision_studio.storage.JOBS_ROOT", jobs_root):
+                client = TestClient(app)
+                project = client.post("/api/projects", json={"name": "multi upload import", "task_type": "detect"}).json()
+                client.post(
+                    f"/api/projects/{project['id']}/images/upload",
+                    files=[
+                        ("files", ("plant.jpg", (image_dir / "plant.jpg").read_bytes(), "image/jpeg")),
+                        ("files", ("root.jpg", (image_dir / "root.jpg").read_bytes(), "image/jpeg")),
+                    ],
+                )
+                response = client.post(
+                    f"/api/projects/{project['id']}/annotations/import-file",
+                    data={"annotation_format": "auto"},
+                    files=[
+                        ("annotation_files", ("plant.txt", "0 0.2 0.4375 0.2 0.375\n", "text/plain")),
+                        ("annotation_files", ("root.txt", "0 0.6 0.375 0.2 0.25\n", "text/plain")),
+                    ],
+                )
+                plant_ann = read_json(annotation_path(project["id"], "uploaded/plant.jpg"))
+                root_ann = read_json(annotation_path(project["id"], "uploaded/root.jpg"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["import_summary"]["annotation_format"], "yolo_labels")
+        self.assertEqual(response.json()["import_summary"]["matched_annotations"], 2)
+        self.assertEqual(plant_ann["instances"][0]["type"], "box")
+        self.assertEqual(root_ann["instances"][0]["type"], "box")
+
     def test_import_project_can_use_uploaded_annotation_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -302,6 +340,41 @@ class AnnotationImportTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(project["import_summary"]["annotation_format"], "cvat_xml")
         self.assertEqual(ann["instances"][0]["type"], "pose")
+
+    def test_import_project_can_use_multiple_uploaded_yolo_label_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data_root = root / "data"
+            projects_root = data_root / "projects"
+            jobs_root = data_root / "jobs"
+            image_dir = root / "images"
+            image_dir.mkdir()
+            Image.new("RGB", (100, 80), "white").save(image_dir / "plant.jpg")
+            Image.new("RGB", (100, 80), "white").save(image_dir / "root.jpg")
+
+            with patch("vision_studio.storage.DATA_ROOT", data_root), patch("vision_studio.storage.PROJECTS_ROOT", projects_root), patch("vision_studio.storage.JOBS_ROOT", jobs_root):
+                response = TestClient(app).post(
+                    "/api/projects/import-file",
+                    data={
+                        "name": "multi upload project import",
+                        "task_type": "detect",
+                        "image_dir": str(image_dir),
+                        "annotation_format": "auto",
+                    },
+                    files=[
+                        ("annotation_files", ("plant.txt", "0 0.2 0.4375 0.2 0.375\n", "text/plain")),
+                        ("annotation_files", ("root.txt", "0 0.6 0.375 0.2 0.25\n", "text/plain")),
+                    ],
+                )
+                project = response.json()
+                plant_ann = read_json(annotation_path(project["id"], "plant.jpg"))
+                root_ann = read_json(annotation_path(project["id"], "root.jpg"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(project["import_summary"]["annotation_format"], "yolo_labels")
+        self.assertEqual(project["import_summary"]["matched_annotations"], 2)
+        self.assertEqual(plant_ann["instances"][0]["type"], "box")
+        self.assertEqual(root_ann["instances"][0]["type"], "box")
 
 
 if __name__ == "__main__":

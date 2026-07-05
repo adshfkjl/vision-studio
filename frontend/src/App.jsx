@@ -1139,7 +1139,7 @@ const SchemaPanel = ({ schema, setSchema, selectedProject }) => {
 function ProjectCenter({ projects, tasks, setSelectedProjectId, setPage, importForm, setImportForm, createForm, setCreateForm, refreshProjects, setMessage }) {
   const [actionStatus, setActionStatus] = useState("");
   const [importImageFiles, setImportImageFiles] = useState([]);
-  const [importAnnotationFile, setImportAnnotationFile] = useState(null);
+  const [importAnnotationFiles, setImportAnnotationFiles] = useState([]);
   const taskCards = TASK_ORDER.map((taskType) => taskInfo(tasks, taskType));
 
   function enterProject(projectId) {
@@ -1183,12 +1183,12 @@ function ProjectCenter({ projects, tasks, setSelectedProjectId, setPage, importF
           task_type: importForm.task_type,
         });
         await api.uploadImages(project.id, importImageFiles);
-        if (importAnnotationFile) {
-          const imported = await api.importAnnotationFile(project.id, { annotation_format: importForm.annotation_format || "auto" }, importAnnotationFile);
+        if (importAnnotationFiles.length) {
+          const imported = await api.importAnnotationFile(project.id, { annotation_format: importForm.annotation_format || "auto" }, importAnnotationFiles);
           project = imported.project || project;
         }
-      } else if (importAnnotationFile) {
-        project = await api.importProjectFile({ ...importForm, annotation_format: importForm.annotation_format || "auto" }, importAnnotationFile);
+      } else if (importAnnotationFiles.length) {
+        project = await api.importProjectFile({ ...importForm, annotation_format: importForm.annotation_format || "auto" }, importAnnotationFiles);
       } else {
         project = await api.importProject(importForm);
       }
@@ -1338,13 +1338,17 @@ function ProjectCenter({ projects, tasks, setSelectedProjectId, setPage, importF
               {importImageFiles.slice(0, 8).map((file) => <span key={file.webkitRelativePath || file.name}>{file.webkitRelativePath || file.name}</span>)}
               {importImageFiles.length > 8 && <span>还有 {importImageFiles.length - 8} 个文件</span>}
             </div>
-            <label>选择标注文件</label>
+            <label>选择标注文件（可多选）</label>
             <input
               type="file"
+              multiple
               accept=".xml,.json,.txt,application/json,application/xml,text/xml,text/plain"
-              onChange={(e) => setImportAnnotationFile(e.target.files?.[0] || null)}
+              onChange={(e) => setImportAnnotationFiles([...e.target.files])}
             />
-            {importAnnotationFile && <div className="upload-list"><span>{importAnnotationFile.name}</span></div>}
+            <div className="upload-list">
+              {importAnnotationFiles.slice(0, 8).map((file) => <span key={`${file.name}-${file.lastModified}`}>{file.name}</span>)}
+              {importAnnotationFiles.length > 8 && <span>还有 {importAnnotationFiles.length - 8} 个文件</span>}
+            </div>
           </div>
           <div className="button-row">
             <button className="primary" onClick={doImport}><FolderInput size={15} />导入并进入</button>
@@ -1396,7 +1400,7 @@ function ProjectDataPage({ selectedProject, refreshProjects, refreshProjectData,
   const [files, setFiles] = useState([]);
   const [actionStatus, setActionStatus] = useState("");
   const [annotationImport, setAnnotationImport] = useState({ annotation_path: "", annotation_format: "auto" });
-  const [annotationFile, setAnnotationFile] = useState(null);
+  const [annotationFiles, setAnnotationFiles] = useState([]);
 
   async function uploadFiles() {
     if (!selectedProject || files.length === 0) return;
@@ -1409,15 +1413,15 @@ function ProjectDataPage({ selectedProject, refreshProjects, refreshProjectData,
   }
 
   async function importAnnotations() {
-    if (!selectedProject || (!annotationImport.annotation_path.trim() && !annotationFile)) return;
+    if (!selectedProject || (!annotationImport.annotation_path.trim() && !annotationFiles.length)) return;
     setActionStatus("正在匹配并导入标注...");
     try {
       const payload = {
         annotation_path: annotationImport.annotation_path.trim(),
         annotation_format: annotationImport.annotation_format === "auto" ? null : annotationImport.annotation_format,
       };
-      const result = annotationFile
-        ? await api.importAnnotationFile(selectedProject.id, { annotation_format: annotationImport.annotation_format === "auto" ? null : annotationImport.annotation_format }, annotationFile)
+      const result = annotationFiles.length
+        ? await api.importAnnotationFile(selectedProject.id, { annotation_format: annotationImport.annotation_format === "auto" ? null : annotationImport.annotation_format }, annotationFiles)
         : await api.importAnnotations(selectedProject.id, payload);
       const summary = result.import_summary || {};
       const text = `标注导入完成：格式 ${summary.annotation_format || "auto"}，匹配 ${summary.matched_annotations || 0}/${summary.annotation_images || 0}，未匹配 ${summary.unmatched_annotations || 0}。`;
@@ -1457,10 +1461,14 @@ function ProjectDataPage({ selectedProject, refreshProjects, refreshProjectData,
           />
           <input
             type="file"
+            multiple
             accept=".xml,.json,.txt,application/json,application/xml,text/xml,text/plain"
-            onChange={(e) => setAnnotationFile(e.target.files?.[0] || null)}
+            onChange={(e) => setAnnotationFiles([...e.target.files])}
           />
-          {annotationFile && <div className="upload-list"><span>{annotationFile.name}</span></div>}
+          <div className="upload-list">
+            {annotationFiles.slice(0, 8).map((file) => <span key={`${file.name}-${file.lastModified}`}>{file.name}</span>)}
+            {annotationFiles.length > 8 && <span>还有 {annotationFiles.length - 8} 个文件</span>}
+          </div>
           <select
             value={annotationImport.annotation_format}
             onChange={(e) => setAnnotationImport({ ...annotationImport, annotation_format: e.target.value })}
@@ -1473,7 +1481,7 @@ function ProjectDataPage({ selectedProject, refreshProjects, refreshProjectData,
             <option value="pascal_voc">Pascal VOC XML</option>
           </select>
         </div>
-        <button className="primary section-gap" disabled={!selectedProject || (!annotationImport.annotation_path.trim() && !annotationFile)} onClick={importAnnotations}>
+        <button className="primary section-gap" disabled={!selectedProject || (!annotationImport.annotation_path.trim() && !annotationFiles.length)} onClick={importAnnotations}>
           <FolderInput size={15} />导入到当前项目
         </button>
       </section>
