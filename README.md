@@ -10,6 +10,8 @@ cd <path-to>\vision_studio
 .\run_backend.ps1
 ```
 
+`run_backend.ps1` now tries to use the CUDA-enabled conda environment `vision-studio-gpu` automatically. If that environment exists and `torch.cuda.is_available()` is true, the backend starts without `backend\.deps` so the GPU PyTorch build is used. If the GPU probe fails, the script falls back to the bundled CPU dependencies in `backend\.deps`.
+
 If port `8000` is already occupied:
 
 ```powershell
@@ -23,13 +25,27 @@ If dependencies need to be recreated:
 python -m pip install --target backend\.deps -r backend\requirements.txt
 ```
 
-For GPU training on Windows, use the conda environment `vision-studio-gpu` and start the backend with:
+To force CPU mode even when a GPU environment is available:
+
+```powershell
+$env:VISION_STUDIO_FORCE_CPU = "1"
+.\run_backend.ps1
+```
+
+To use a different GPU conda environment name:
+
+```powershell
+$env:VISION_STUDIO_GPU_CONDA_ENV = "your-gpu-env"
+.\run_backend.ps1
+```
+
+For an explicit GPU-only startup on Windows, use:
 
 ```powershell
 .\run_backend_gpu.ps1
 ```
 
-This skips `backend\.deps` so the CUDA-enabled PyTorch installed in the conda environment is used instead of the bundled CPU-only torch package.
+Both the automatic GPU path and `run_backend_gpu.ps1` skip `backend\.deps` so the CUDA-enabled PyTorch installed in the conda environment is used instead of the bundled CPU-only torch package.
 
 ## Frontend
 
