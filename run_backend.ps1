@@ -22,14 +22,16 @@ try:
     print("CUDA_AVAILABLE=" + ("1" if ok else "0"))
     print("TORCH=" + getattr(torch, "__version__", "unknown"))
     print("PYTHON=" + sys.executable)
-    if ok:
-        print("CUDA_DEVICE=" + torch.cuda.get_device_name(0))
+    print("CUDA_DEVICE=" + (torch.cuda.get_device_name(0) if ok else "none"))
 except Exception as exc:
     print("CUDA_AVAILABLE=0")
     print("ERROR=" + repr(exc))
 '@
+    $probeFile = Join-Path $env:TEMP "vision-studio-gpu-probe.py"
+    Set-Content -LiteralPath $probeFile -Value $probe -Encoding UTF8
 
-    $output = $probe | conda run -n $EnvName python - 2>&1
+    $output = conda run -n $EnvName python $probeFile 2>&1
+    Remove-Item -LiteralPath $probeFile -Force -ErrorAction SilentlyContinue
     if ($LASTEXITCODE -ne 0) {
         Write-Host "[Vision Studio] GPU env '$EnvName' probe failed; falling back to bundled CPU dependencies."
         $output | ForEach-Object { Write-Host "[Vision Studio] $_" }
