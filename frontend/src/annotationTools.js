@@ -21,6 +21,12 @@ export function shouldShowBboxResizeHandles({ selected, tool }) {
   return Boolean(selected && canResizeBbox(tool));
 }
 
+export function nextActiveClassValue(classes, currentClass, preserveCurrent = false) {
+  const fallback = classes?.[0]?.id ?? 0;
+  if (!preserveCurrent) return fallback;
+  return classes?.some((item) => Number(item.id) === Number(currentClass)) ? currentClass : fallback;
+}
+
 export function instanceClassName(instance, schema) {
   return schema?.classes?.find((item) => Number(item.id) === Number(instance?.class_id))?.name || `class ${instance?.class_id ?? 0}`;
 }

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { canAdjustExistingAnnotation, instanceDetailLabel, instanceTitleLabel, shouldShowBboxResizeHandles } from "./annotationTools.js";
+import { canAdjustExistingAnnotation, instanceDetailLabel, instanceTitleLabel, nextActiveClassValue, shouldShowBboxResizeHandles } from "./annotationTools.js";
 
 test("mouse mode can adjust existing annotation instances", () => {
   assert.equal(canAdjustExistingAnnotation("mouse"), true);
@@ -39,4 +39,12 @@ test("pose instance labels describe the annotation instead of exposing raw type 
 
   assert.equal(instanceTitleLabel(instance, schema, 0), "#1 姿态 · object");
   assert.equal(instanceDetailLabel(instance, schema), "框 + 1/2 关键点");
+});
+
+test("active annotation label stays selected when refreshing project data after save", () => {
+  const classes = [{ id: 0, name: "A" }, { id: 2, name: "B" }];
+
+  assert.equal(nextActiveClassValue(classes, 2, true), 2);
+  assert.equal(nextActiveClassValue(classes, 2, false), 0);
+  assert.equal(nextActiveClassValue(classes, 9, true), 0);
 });

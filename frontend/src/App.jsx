@@ -27,6 +27,7 @@ import {
   canResizeBbox,
   instanceDetailLabel,
   instanceTitleLabel,
+  nextActiveClassValue,
   shouldShowBboxResizeHandles,
 } from "./annotationTools.js";
 
@@ -2283,7 +2284,7 @@ export default function App() {
     setImages(imgData.items);
     setSchema(schemaData);
     setValidation(validationData);
-    setActiveClass(schemaData.classes?.[0]?.id ?? 0);
+    setActiveClass((current) => nextActiveClassValue(schemaData.classes || [], current, preserveTool));
     setSelectedImageName((current) => imgData.items.some((img) => img.name === current) ? current : imgData.items[0]?.name || "");
     if (!preserveTool) {
       setActiveKeypoint(schemaData.keypoints?.[0] || "");
