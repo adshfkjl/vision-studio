@@ -27,6 +27,10 @@ export function nextActiveClassValue(classes, currentClass, preserveCurrent = fa
   return classes?.some((item) => Number(item.id) === Number(currentClass)) ? currentClass : fallback;
 }
 
+export function isExitAnnotationShortcut(evt) {
+  return evt?.key === "Escape" || evt?.code === "Escape";
+}
+
 export function instanceClassName(instance, schema) {
   return schema?.classes?.find((item) => Number(item.id) === Number(instance?.class_id))?.name || `class ${instance?.class_id ?? 0}`;
 }

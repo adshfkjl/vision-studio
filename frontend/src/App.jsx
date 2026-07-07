@@ -27,6 +27,7 @@ import {
   canResizeBbox,
   instanceDetailLabel,
   instanceTitleLabel,
+  isExitAnnotationShortcut,
   nextActiveClassValue,
   shouldShowBboxResizeHandles,
 } from "./annotationTools.js";
@@ -250,7 +251,7 @@ function handleEdges(handle) {
   };
 }
 
-function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, activeClass, tool, activeKeypoint, setActiveKeypoint, zoom, setZoom, selected, setSelected }) {
+function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, activeClass, tool, setTool, activeKeypoint, setActiveKeypoint, zoom, setZoom, selected, setSelected }) {
   const svgRef = useRef(null);
   const canvasScrollRef = useRef(null);
   const stageRef = useRef(null);
@@ -548,6 +549,12 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
     function onKeyDown(evt) {
       const tag = evt.target?.tagName?.toLowerCase();
       if (tag === "input" || tag === "textarea" || tag === "select") return;
+      if (isExitAnnotationShortcut(evt)) {
+        evt.preventDefault();
+        clearDraftState({ suppressKeypointPreview: true });
+        setTool("mouse");
+        return;
+      }
       if (schema.task_type === "segment" && tool === "polygon" && evt.code === "Space") {
         evt.preventDefault();
         finishPolygon();
@@ -1608,6 +1615,7 @@ function AnnotatePage(props) {
             setAnnotation={setAnnotation}
             activeClass={activeClass}
             tool={tool}
+            setTool={setTool}
             activeKeypoint={activeKeypoint}
             setActiveKeypoint={setActiveKeypoint}
             zoom={zoom}

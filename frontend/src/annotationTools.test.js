@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { canAdjustExistingAnnotation, instanceDetailLabel, instanceTitleLabel, nextActiveClassValue, shouldShowBboxResizeHandles } from "./annotationTools.js";
+import { canAdjustExistingAnnotation, instanceDetailLabel, instanceTitleLabel, isExitAnnotationShortcut, nextActiveClassValue, shouldShowBboxResizeHandles } from "./annotationTools.js";
 
 test("mouse mode can adjust existing annotation instances", () => {
   assert.equal(canAdjustExistingAnnotation("mouse"), true);
@@ -47,4 +47,10 @@ test("active annotation label stays selected when refreshing project data after 
   assert.equal(nextActiveClassValue(classes, 2, true), 2);
   assert.equal(nextActiveClassValue(classes, 2, false), 0);
   assert.equal(nextActiveClassValue(classes, 9, true), 0);
+});
+
+test("escape key exits the current annotation shortcut", () => {
+  assert.equal(isExitAnnotationShortcut({ key: "Escape" }), true);
+  assert.equal(isExitAnnotationShortcut({ code: "Escape" }), true);
+  assert.equal(isExitAnnotationShortcut({ key: "Enter" }), false);
 });
