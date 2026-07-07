@@ -22,7 +22,13 @@ import {
   ZoomOut,
 } from "lucide-react";
 import { api, apiBase, apiUrl, artifactUrl, imageUrl } from "./api.js";
-import { canAdjustExistingAnnotation, canResizeBbox, shouldShowBboxResizeHandles } from "./annotationTools.js";
+import {
+  canAdjustExistingAnnotation,
+  canResizeBbox,
+  instanceDetailLabel,
+  instanceTitleLabel,
+  shouldShowBboxResizeHandles,
+} from "./annotationTools.js";
 
 const blankImport = {
   name: "current-pose",
@@ -243,7 +249,7 @@ function handleEdges(handle) {
   };
 }
 
-function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, activeClass, tool, activeKeypoint, setActiveKeypoint, zoom, setZoom }) {
+function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, activeClass, tool, activeKeypoint, setActiveKeypoint, zoom, setZoom, selected, setSelected }) {
   const svgRef = useRef(null);
   const canvasScrollRef = useRef(null);
   const stageRef = useRef(null);
@@ -253,7 +259,6 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
   const [draftBoxStart, setDraftBoxStart] = useState(null);
   const [draftBox, setDraftBox] = useState(null);
   const [keypointPreviewEnabled, setKeypointPreviewEnabled] = useState(true);
-  const [selected, setSelected] = useState(null);
   const [drag, setDrag] = useState(null);
   const [panState, setPanState] = useState(null);
   const [liveAnnotation, setLiveAnnotation] = useState(null);
@@ -350,6 +355,7 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
   }
 
   function isSelected(type, instanceIndex, key) {
+    if (selected?.type === "instance" && selected.instanceIndex === instanceIndex) return true;
     return selected?.type === type && selected.instanceIndex === instanceIndex && selected.key === key;
   }
 
@@ -926,6 +932,7 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
                     stroke="#f59e0b"
                     strokeWidth="0.002"
                     strokeDasharray="0.01 0.006"
+                    data-testid={`selected-bbox-${instanceIndex}`}
                   />
                 )}
                 <rect
@@ -990,7 +997,7 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
                   const kpColor = keypointColor(schema, name);
                   return (
                     <g key={name}>
-                      {selectedPoint && <circle cx={p.x} cy={p.y} r="0.008" fill="none" stroke="#111827" strokeWidth="0.0015" />}
+                      {selectedPoint && <circle cx={p.x} cy={p.y} r="0.008" fill="none" stroke="#111827" strokeWidth="0.0015" data-testid={`selected-keypoint-${instanceIndex}-${name}`} />}
                       <circle
                         cx={p.x}
                         cy={p.y}
@@ -1525,6 +1532,7 @@ function AnnotatePage(props) {
     setZoom,
     message,
   } = props;
+  const [selectedTarget, setSelectedTarget] = useState(null);
 
   return (
     <div className="annotation-page">
@@ -1572,7 +1580,21 @@ function AnnotatePage(props) {
           <span className={`save-state ${saveState}`}>{saveState === "dirty" ? "未保存" : saveState === "saving" ? "保存中" : "已保存"}</span>
         </div>
         {schema && selectedProject ? (
-          <AnnotationCanvas project={selectedProject} image={selectedImage} schema={schema} annotation={annotation} setAnnotation={setAnnotation} activeClass={activeClass} tool={tool} activeKeypoint={activeKeypoint} setActiveKeypoint={setActiveKeypoint} zoom={zoom} setZoom={setZoom} />
+          <AnnotationCanvas
+            project={selectedProject}
+            image={selectedImage}
+            schema={schema}
+            annotation={annotation}
+            setAnnotation={setAnnotation}
+            activeClass={activeClass}
+            tool={tool}
+            activeKeypoint={activeKeypoint}
+            setActiveKeypoint={setActiveKeypoint}
+            zoom={zoom}
+            setZoom={setZoom}
+            selected={selectedTarget}
+            setSelected={setSelectedTarget}
+          />
         ) : (
           <div className="empty-state"><ImageIcon size={32} /><strong>还没有打开项目</strong><span>请先到“数据”页面导入或上传图片。</span></div>
         )}
@@ -1581,7 +1603,15 @@ function AnnotatePage(props) {
         <h2>实例</h2>
         <div className="instances">
           {(annotation.instances || []).map((inst, idx) => (
-            <div key={idx}><span style={{ background: clsColor(schema, inst.class_id) }} />{idx + 1}. {clsName(schema, inst.class_id)} 路 {inst.type}</div>
+            <button
+              key={idx}
+              className={selectedTarget?.instanceIndex === idx ? "selected" : ""}
+              onClick={() => setSelectedTarget({ type: "instance", instanceIndex: idx, key: "instance" })}
+            >
+              <span style={{ background: clsColor(schema, inst.class_id) }} />
+              <strong>{instanceTitleLabel(inst, schema, idx)}</strong>
+              <small>{instanceDetailLabel(inst, schema)}</small>
+            </button>
           ))}
         </div>
         {message && <p className="message">{message}</p>}

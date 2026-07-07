@@ -81,6 +81,13 @@ test("mouse mode drags a pose keypoint before the containing bbox interior", asy
 
   const svg = page.locator(".canvas-svg");
   await expect(svg).toBeVisible();
+
+  const instanceRow = page.getByRole("button", { name: /#1 姿态 · stem 框 \+ 1\/1 关键点/ });
+  await expect(instanceRow).toBeVisible();
+  await instanceRow.click();
+  await expect(page.getByTestId("selected-bbox-0")).toBeVisible();
+  await expect(page.getByTestId("selected-keypoint-0-tip")).toBeVisible();
+
   const box = await svg.boundingBox();
   const startX = box.x + box.width * 0.5;
   const startY = box.y + box.height * 0.5;
