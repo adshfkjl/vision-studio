@@ -106,3 +106,89 @@ test("mouse mode drags a pose keypoint before the containing bbox interior", asy
   expect(instance.keypoints[0].x).toBeGreaterThan(0.58);
   expect(instance.keypoints[0].y).toBeGreaterThan(0.54);
 });
+
+test("polygon mode saves the class selected from the visible label dropdown", async ({ page }) => {
+  let savedAnnotation = null;
+
+  await page.route(/\/api\/tasks$/, async (route) => {
+    await route.fulfill({
+      json: [
+        { task_type: "segment", display_name: "Segmentation", station_annotation: true, default_model: "yolov8n-seg.pt" },
+      ],
+    });
+  });
+  await page.route(/\/api\/projects$/, async (route) => {
+    await route.fulfill({
+      json: [
+        {
+          id: "segment-project",
+          name: "Segment Project",
+          task_type: "segment",
+          schema: { task_type: "segment" },
+          images: [{ name: "plot.jpg", width: 100, height: 100, annotated: false }],
+        },
+      ],
+    });
+  });
+  await page.route(/\/api\/projects\/segment-project\/images(?:\?.*)?$/, async (route) => {
+    await route.fulfill({ json: { total: 1, items: [{ name: "plot.jpg", width: 100, height: 100, annotated: false }] } });
+  });
+  await page.route(/\/api\/projects\/segment-project\/schema$/, async (route) => {
+    await route.fulfill({
+      json: {
+        task_type: "segment",
+        classes: [
+          { id: 0, name: "stem", color: "#0f766e" },
+          { id: 1, name: "leaf", color: "#2563eb" },
+        ],
+        keypoints: [],
+        skeleton: [],
+        flip_idx: [],
+      },
+    });
+  });
+  await page.route(/\/api\/projects\/segment-project\/validation$/, async (route) => {
+    await route.fulfill({ json: { status: "ok", summary: {}, issues: [] } });
+  });
+  await page.route(/\/api\/projects\/segment-project\/images\/plot\.jpg$/, async (route) => {
+    await route.fulfill({ contentType: "image/png", body: pixelPng });
+  });
+  await page.route(/\/api\/projects\/segment-project\/annotations\/plot\.jpg$/, async (route) => {
+    if (route.request().method() === "PUT") {
+      savedAnnotation = route.request().postDataJSON();
+      await route.fulfill({ json: { ok: true } });
+      return;
+    }
+    await route.fulfill({
+      json: {
+        image: "plot.jpg",
+        width: 100,
+        height: 100,
+        annotation: { version: 1, instances: [] },
+      },
+    });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: /Segment Project/ }).click();
+  await page.locator(".workspace-tabs button").nth(3).click();
+  await page.getByLabel("标签").selectOption("1");
+
+  const svg = page.locator(".canvas-svg");
+  await expect(svg).toBeVisible();
+  const box = await svg.boundingBox();
+  await page.mouse.click(box.x + box.width * 0.25, box.y + box.height * 0.25);
+  await page.mouse.click(box.x + box.width * 0.65, box.y + box.height * 0.25);
+  await page.mouse.click(box.x + box.width * 0.45, box.y + box.height * 0.7);
+  await page.keyboard.press("Space");
+  await page.keyboard.press("Control+S");
+
+  await expect.poll(() => savedAnnotation).not.toBeNull();
+  expect(savedAnnotation.instances[0].type).toBe("polygon");
+  expect(savedAnnotation.instances[0].class_id).toBe(1);
+
+  await page.getByLabel("实例 #1 标签").selectOption("0");
+  await page.keyboard.press("Control+S");
+
+  await expect.poll(() => savedAnnotation.instances[0].class_id).toBe(0);
+});

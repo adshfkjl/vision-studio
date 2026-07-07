@@ -1533,6 +1533,22 @@ function AnnotatePage(props) {
     message,
   } = props;
   const [selectedTarget, setSelectedTarget] = useState(null);
+  const classes = schema?.classes || [];
+
+  function selectInstance(idx) {
+    setSelectedTarget({ type: "instance", instanceIndex: idx, key: "instance" });
+  }
+
+  function updateInstanceClass(idx, classId) {
+    const nextClassId = Number(classId);
+    setSelectedTarget({ type: "instance", instanceIndex: idx, key: "instance" });
+    setAnnotation((current) => ({
+      ...current,
+      instances: (current.instances || []).map((inst, instIdx) => (
+        instIdx === idx ? { ...inst, class_id: nextClassId } : inst
+      )),
+    }));
+  }
 
   return (
     <div className="annotation-page">
@@ -1547,9 +1563,12 @@ function AnnotatePage(props) {
       </aside>
       <section className="workspace">
         <div className="toolbar">
-          <select value={activeClass} onChange={(e) => setActiveClass(Number(e.target.value))}>
-            {(schema?.classes || []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          <label className="annotation-class-picker">
+            <span>标签</span>
+            <select aria-label="标签" value={activeClass} onChange={(e) => setActiveClass(Number(e.target.value))}>
+              {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </label>
           {schema?.task_type === "segment" ? (
             <>
               <button className={tool === "mouse" ? "active" : ""} onClick={() => setTool("mouse")}><Move size={15} />鼠标</button>
@@ -1603,15 +1622,26 @@ function AnnotatePage(props) {
         <h2>实例</h2>
         <div className="instances">
           {(annotation.instances || []).map((inst, idx) => (
-            <button
+            <div
               key={idx}
-              className={selectedTarget?.instanceIndex === idx ? "selected" : ""}
-              onClick={() => setSelectedTarget({ type: "instance", instanceIndex: idx, key: "instance" })}
+              className={`instance-card ${selectedTarget?.instanceIndex === idx ? "selected" : ""}`}
             >
-              <span style={{ background: clsColor(schema, inst.class_id) }} />
-              <strong>{instanceTitleLabel(inst, schema, idx)}</strong>
-              <small>{instanceDetailLabel(inst, schema)}</small>
-            </button>
+              <button type="button" className="instance-summary" onClick={() => selectInstance(idx)}>
+                <span style={{ background: clsColor(schema, inst.class_id) }} />
+                <strong>{instanceTitleLabel(inst, schema, idx)}</strong>
+                <small>{instanceDetailLabel(inst, schema)}</small>
+              </button>
+              <label className="instance-class-editor">
+                <span>标签</span>
+                <select
+                  aria-label={`实例 #${idx + 1} 标签`}
+                  value={inst.class_id ?? activeClass}
+                  onChange={(evt) => updateInstanceClass(idx, evt.target.value)}
+                >
+                  {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </label>
+            </div>
           ))}
         </div>
         {message && <p className="message">{message}</p>}
