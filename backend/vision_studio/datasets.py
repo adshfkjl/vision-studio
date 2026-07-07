@@ -21,18 +21,24 @@ from .yolo import annotation_for_image, annotation_to_yolo, data_yaml_text
 from .yolo import classification_class_name, image_has_label
 
 
+def labeled_image_names(project: dict[str, Any]) -> list[str]:
+    images = []
+    for item in project.get("images", []):
+        image_name = item["name"]
+        ann = read_json(annotation_path(project["id"], image_name))
+        label_path = yolo_label_path(project, image_name)
+        if (ann and ann.get("instances")) or (label_path and label_path.is_file()) or image_has_label(project, image_name):
+            images.append(image_name)
+    return images
+
+
 def split_project(project: dict[str, Any], train: float, val: float, test: float, seed: int) -> dict[str, Any]:
     total = train + val + test
     if total <= 0:
         raise ValueError("Split ratios must be positive")
     train_r, val_r, test_r = train / total, val / total, test / total
 
-    images = []
-    for item in project.get("images", []):
-        ann = read_json(annotation_path(project["id"], item["name"]))
-        label_path = yolo_label_path(project, item["name"])
-        if (ann and ann.get("instances")) or (label_path and label_path.is_file()) or image_has_label(project, item["name"]):
-            images.append(item["name"])
+    images = labeled_image_names(project)
 
     rng = random.Random(seed)
     rng.shuffle(images)
@@ -54,11 +60,46 @@ def split_project(project: dict[str, Any], train: float, val: float, test: float
     return split
 
 
+def refresh_split(project: dict[str, Any], split: dict[str, Any]) -> dict[str, Any]:
+    labeled = labeled_image_names(project)
+    labeled_set = set(labeled)
+    refreshed: dict[str, Any] = {}
+    assigned: set[str] = set()
+    changed = False
+
+    for subset in ("train", "val", "test"):
+        refreshed_subset = []
+        for image_name in split.get(subset, []):
+            if image_name in labeled_set and image_name not in assigned:
+                refreshed_subset.append(image_name)
+                assigned.add(image_name)
+            else:
+                changed = True
+        refreshed[subset] = refreshed_subset
+
+    missing = [image_name for image_name in labeled if image_name not in assigned]
+    if missing:
+        refreshed["train"].extend(missing)
+        changed = True
+
+    for key in ("ratios", "seed"):
+        if key in split:
+            refreshed[key] = split[key]
+
+    if changed:
+        project["split"] = refreshed
+        write_json(splits_dir(project["id"]) / "current.json", refreshed)
+        save_project(project)
+    return refreshed
+
+
 def materialize_dataset(project: dict[str, Any], split: dict[str, Any] | None = None) -> MaterializedDataset:
     if split is None:
         split = project.get("split")
     if not split:
         split = split_project(project, 0.8, 0.15, 0.05, 42)
+    elif split is project.get("split"):
+        split = refresh_split(project, split)
 
     root = project_dir(project["id"]) / "dataset"
     if root.exists():

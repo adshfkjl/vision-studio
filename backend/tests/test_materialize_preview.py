@@ -86,6 +86,50 @@ class MaterializePreviewTests(unittest.TestCase):
                 "0 0.1 0.2 0.4 0.2 0.4 0.5 0.1 0.5\n",
             )
 
+    def test_materialization_adds_newly_annotated_images_to_existing_split(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            image_dir = root / "images"
+            image_dir.mkdir()
+            for name in ("one.jpg", "two.jpg"):
+                Image.new("RGB", (10, 10)).save(image_dir / name)
+            project = {
+                "id": "refresh-project",
+                "schema": default_schema("detect"),
+                "task_type": "detect",
+                "image_dir": str(image_dir),
+                "label_dir": None,
+                "images": [
+                    {"name": "one.jpg", "path": str(image_dir / "one.jpg"), "width": 10, "height": 10},
+                    {"name": "two.jpg", "path": str(image_dir / "two.jpg"), "width": 10, "height": 10},
+                ],
+                "split": {
+                    "train": ["one.jpg"],
+                    "val": [],
+                    "test": [],
+                    "ratios": {"train": 0.8, "val": 0.15, "test": 0.05},
+                    "seed": 42,
+                },
+            }
+
+            annotation = {"version": 1, "instances": [{"type": "box", "class_id": 0, "bbox": {"cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2}}]}
+            with patch("vision_studio.storage.PROJECTS_ROOT", root / "projects"):
+                from vision_studio.storage import annotation_path, write_json
+
+                write_json(annotation_path(project["id"], "one.jpg"), annotation)
+                write_json(annotation_path(project["id"], "two.jpg"), annotation)
+
+                dataset = materialize_dataset(project)
+
+            materialized_images = {
+                path.name
+                for subset in ("train", "val", "test")
+                for path in (dataset.root / "images" / subset).glob("*.jpg")
+            }
+            split_images = set(project["split"]["train"] + project["split"]["val"] + project["split"]["test"])
+            self.assertIn("two.jpg", materialized_images)
+            self.assertIn("two.jpg", split_images)
+
 
 if __name__ == "__main__":
     unittest.main()
