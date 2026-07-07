@@ -296,3 +296,80 @@ test("instance panel can hide instances, hide classes, and delete a whole instan
   expect(savedAnnotation.instances).toHaveLength(1);
   expect(savedAnnotation.instances[0].class_id).toBe(0);
 });
+
+test("instance panel scrolls to later instances instead of clipping after the first few", async ({ page }) => {
+  const instances = Array.from({ length: 12 }, (_, idx) => ({
+    type: "polygon",
+    class_id: idx % 2,
+    points: [
+      { x: 0.08, y: 0.08 },
+      { x: 0.12, y: 0.08 },
+      { x: 0.1, y: 0.12 },
+    ],
+  }));
+
+  await page.route(/\/api\/tasks$/, async (route) => {
+    await route.fulfill({
+      json: [
+        { task_type: "segment", display_name: "Segmentation", station_annotation: true, default_model: "yolov8n-seg.pt" },
+      ],
+    });
+  });
+  await page.route(/\/api\/projects$/, async (route) => {
+    await route.fulfill({
+      json: [
+        {
+          id: "many-instances-project",
+          name: "Many Instances Project",
+          task_type: "segment",
+          schema: { task_type: "segment" },
+          images: [{ name: "plot.jpg", width: 100, height: 100, annotated: true }],
+        },
+      ],
+    });
+  });
+  await page.route(/\/api\/projects\/many-instances-project\/images(?:\?.*)?$/, async (route) => {
+    await route.fulfill({ json: { total: 1, items: [{ name: "plot.jpg", width: 100, height: 100, annotated: true }] } });
+  });
+  await page.route(/\/api\/projects\/many-instances-project\/schema$/, async (route) => {
+    await route.fulfill({
+      json: {
+        task_type: "segment",
+        classes: [
+          { id: 0, name: "stem", color: "#0f766e" },
+          { id: 1, name: "leaf", color: "#2563eb" },
+        ],
+        keypoints: [],
+        skeleton: [],
+        flip_idx: [],
+      },
+    });
+  });
+  await page.route(/\/api\/projects\/many-instances-project\/validation$/, async (route) => {
+    await route.fulfill({ json: { status: "ok", summary: {}, issues: [] } });
+  });
+  await page.route(/\/api\/projects\/many-instances-project\/images\/plot\.jpg$/, async (route) => {
+    await route.fulfill({ contentType: "image/png", body: pixelPng });
+  });
+  await page.route(/\/api\/projects\/many-instances-project\/annotations\/plot\.jpg$/, async (route) => {
+    await route.fulfill({
+      json: {
+        image: "plot.jpg",
+        width: 100,
+        height: 100,
+        annotation: { version: 1, instances },
+      },
+    });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: /Many Instances Project/ }).click();
+  await page.locator(".workspace-tabs button").nth(3).click();
+
+  const instanceList = page.locator(".instances");
+  await expect.poll(() => instanceList.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  await instanceList.evaluate((el) => {
+    el.scrollTop = el.scrollHeight;
+  });
+  await expect(page.getByRole("button", { name: /#12 多边形/ })).toBeVisible();
+});

@@ -1690,7 +1690,7 @@ function AnnotatePage(props) {
           <div className="empty-state"><ImageIcon size={32} /><strong>还没有打开项目</strong><span>请先到“数据”页面导入或上传图片。</span></div>
         )}
       </section>
-      <aside className="panel">
+      <aside className="panel instance-panel">
         <h2>实例</h2>
         {classes.length > 0 && (
           <div className="class-visibility-list">
