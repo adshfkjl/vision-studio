@@ -251,7 +251,24 @@ function handleEdges(handle) {
   };
 }
 
-function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, activeClass, tool, setTool, activeKeypoint, setActiveKeypoint, zoom, setZoom, selected, setSelected }) {
+function AnnotationCanvas({
+  project,
+  image,
+  schema,
+  annotation,
+  setAnnotation,
+  activeClass,
+  tool,
+  setTool,
+  activeKeypoint,
+  setActiveKeypoint,
+  zoom,
+  setZoom,
+  selected,
+  setSelected,
+  hiddenInstances,
+  hiddenClassIds,
+}) {
   const svgRef = useRef(null);
   const canvasScrollRef = useRef(null);
   const stageRef = useRef(null);
@@ -897,11 +914,12 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
           onContextMenu={handleCanvasContextMenu}
         >
           {(displayAnnotation?.instances || []).map((inst, instanceIndex) => {
+            if (hiddenInstances.has(instanceIndex) || hiddenClassIds.has(Number(inst.class_id))) return null;
             const color = clsColor(schema, inst.class_id);
             if (inst.type === "polygon") {
               const points = inst.points.map((p) => `${p.x},${p.y}`).join(" ");
               return (
-                <g key={instanceIndex}>
+                <g key={instanceIndex} data-testid={`annotation-instance-${instanceIndex}`}>
                   <polygon points={points} fill={color} fillOpacity="0.22" stroke={color} strokeWidth="0.001" />
                   {inst.points.map((p, pointIndex) => {
                     const selectedPoint = isSelected("polygon-point", instanceIndex, pointIndex);
@@ -929,7 +947,7 @@ function AnnotationCanvas({ project, image, schema, annotation, setAnnotation, a
             const selectedBox = isSelected("bbox", instanceIndex, "bbox");
             const kptMap = Object.fromEntries((inst.keypoints || []).map((p) => [p.name, p]));
             return (
-              <g key={instanceIndex}>
+              <g key={instanceIndex} data-testid={`annotation-instance-${instanceIndex}`}>
                 {selectedBox && (
                   <rect
                     x={box.cx - box.w / 2}
@@ -1541,10 +1559,37 @@ function AnnotatePage(props) {
     message,
   } = props;
   const [selectedTarget, setSelectedTarget] = useState(null);
+  const [hiddenInstances, setHiddenInstances] = useState(() => new Set());
+  const [hiddenClassIds, setHiddenClassIds] = useState(() => new Set());
   const classes = schema?.classes || [];
+
+  useEffect(() => {
+    setSelectedTarget(null);
+    setHiddenInstances(new Set());
+    setHiddenClassIds(new Set());
+  }, [selectedProject?.id, selectedImageName]);
 
   function selectInstance(idx) {
     setSelectedTarget({ type: "instance", instanceIndex: idx, key: "instance" });
+  }
+
+  function toggleHiddenInstance(idx) {
+    setHiddenInstances((current) => {
+      const next = new Set(current);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  }
+
+  function toggleHiddenClass(classId) {
+    const numericClassId = Number(classId);
+    setHiddenClassIds((current) => {
+      const next = new Set(current);
+      if (next.has(numericClassId)) next.delete(numericClassId);
+      else next.add(numericClassId);
+      return next;
+    });
   }
 
   function updateInstanceClass(idx, classId) {
@@ -1556,6 +1601,22 @@ function AnnotatePage(props) {
         instIdx === idx ? { ...inst, class_id: nextClassId } : inst
       )),
     }));
+  }
+
+  function deleteInstance(idx) {
+    setAnnotation((current) => ({
+      ...current,
+      instances: (current.instances || []).filter((_, instIdx) => instIdx !== idx),
+    }));
+    setSelectedTarget(null);
+    setHiddenInstances((current) => {
+      const next = new Set();
+      current.forEach((hiddenIdx) => {
+        if (hiddenIdx < idx) next.add(hiddenIdx);
+        if (hiddenIdx > idx) next.add(hiddenIdx - 1);
+      });
+      return next;
+    });
   }
 
   return (
@@ -1622,6 +1683,8 @@ function AnnotatePage(props) {
             setZoom={setZoom}
             selected={selectedTarget}
             setSelected={setSelectedTarget}
+            hiddenInstances={hiddenInstances}
+            hiddenClassIds={hiddenClassIds}
           />
         ) : (
           <div className="empty-state"><ImageIcon size={32} /><strong>还没有打开项目</strong><span>请先到“数据”页面导入或上传图片。</span></div>
@@ -1629,11 +1692,30 @@ function AnnotatePage(props) {
       </section>
       <aside className="panel">
         <h2>实例</h2>
+        {classes.length > 0 && (
+          <div className="class-visibility-list">
+            {classes.map((item) => {
+              const hidden = hiddenClassIds.has(Number(item.id));
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={hidden ? "hidden" : ""}
+                  aria-label={`${hidden ? "显示" : "隐藏"}标签 ${item.name}`}
+                  onClick={() => toggleHiddenClass(item.id)}
+                >
+                  <span style={{ background: item.color || clsColor(schema, item.id) }} />
+                  {hidden ? "显示" : "隐藏"} {item.name}
+                </button>
+              );
+            })}
+          </div>
+        )}
         <div className="instances">
           {(annotation.instances || []).map((inst, idx) => (
             <div
               key={idx}
-              className={`instance-card ${selectedTarget?.instanceIndex === idx ? "selected" : ""}`}
+              className={`instance-card ${selectedTarget?.instanceIndex === idx ? "selected" : ""} ${hiddenInstances.has(idx) ? "hidden" : ""}`}
             >
               <button type="button" className="instance-summary" onClick={() => selectInstance(idx)}>
                 <span style={{ background: clsColor(schema, inst.class_id) }} />
@@ -1650,6 +1732,23 @@ function AnnotatePage(props) {
                   {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </label>
+              <div className="instance-actions">
+                <button
+                  type="button"
+                  aria-label={`${hiddenInstances.has(idx) ? "显示" : "隐藏"}实例 #${idx + 1}`}
+                  onClick={() => toggleHiddenInstance(idx)}
+                >
+                  {hiddenInstances.has(idx) ? "显示" : "隐藏"}
+                </button>
+                <button
+                  type="button"
+                  className="danger"
+                  aria-label={`删除实例 #${idx + 1}`}
+                  onClick={() => deleteInstance(idx)}
+                >
+                  删除
+                </button>
+              </div>
             </div>
           ))}
         </div>

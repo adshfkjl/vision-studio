@@ -172,7 +172,7 @@ test("polygon mode saves the class selected from the visible label dropdown", as
   await page.goto("/");
   await page.getByRole("button", { name: /Segment Project/ }).click();
   await page.locator(".workspace-tabs button").nth(3).click();
-  await page.getByLabel("标签").selectOption("1");
+  await page.getByLabel("标签", { exact: true }).selectOption("1");
 
   const svg = page.locator(".canvas-svg");
   await expect(svg).toBeVisible();
@@ -191,4 +191,108 @@ test("polygon mode saves the class selected from the visible label dropdown", as
   await page.keyboard.press("Control+S");
 
   await expect.poll(() => savedAnnotation.instances[0].class_id).toBe(0);
+});
+
+test("instance panel can hide instances, hide classes, and delete a whole instance", async ({ page }) => {
+  let savedAnnotation = null;
+
+  await page.route(/\/api\/tasks$/, async (route) => {
+    await route.fulfill({
+      json: [
+        { task_type: "segment", display_name: "Segmentation", station_annotation: true, default_model: "yolov8n-seg.pt" },
+      ],
+    });
+  });
+  await page.route(/\/api\/projects$/, async (route) => {
+    await route.fulfill({
+      json: [
+        {
+          id: "visibility-project",
+          name: "Visibility Project",
+          task_type: "segment",
+          schema: { task_type: "segment" },
+          images: [{ name: "plot.jpg", width: 100, height: 100, annotated: true }],
+        },
+      ],
+    });
+  });
+  await page.route(/\/api\/projects\/visibility-project\/images(?:\?.*)?$/, async (route) => {
+    await route.fulfill({ json: { total: 1, items: [{ name: "plot.jpg", width: 100, height: 100, annotated: true }] } });
+  });
+  await page.route(/\/api\/projects\/visibility-project\/schema$/, async (route) => {
+    await route.fulfill({
+      json: {
+        task_type: "segment",
+        classes: [
+          { id: 0, name: "stem", color: "#0f766e" },
+          { id: 1, name: "leaf", color: "#2563eb" },
+        ],
+        keypoints: [],
+        skeleton: [],
+        flip_idx: [],
+      },
+    });
+  });
+  await page.route(/\/api\/projects\/visibility-project\/validation$/, async (route) => {
+    await route.fulfill({ json: { status: "ok", summary: {}, issues: [] } });
+  });
+  await page.route(/\/api\/projects\/visibility-project\/images\/plot\.jpg$/, async (route) => {
+    await route.fulfill({ contentType: "image/png", body: pixelPng });
+  });
+  await page.route(/\/api\/projects\/visibility-project\/annotations\/plot\.jpg$/, async (route) => {
+    if (route.request().method() === "PUT") {
+      savedAnnotation = route.request().postDataJSON();
+      await route.fulfill({ json: { ok: true } });
+      return;
+    }
+    await route.fulfill({
+      json: {
+        image: "plot.jpg",
+        width: 100,
+        height: 100,
+        annotation: {
+          version: 1,
+          instances: [
+            {
+              type: "polygon",
+              class_id: 0,
+              points: [{ x: 0.15, y: 0.15 }, { x: 0.35, y: 0.15 }, { x: 0.25, y: 0.35 }],
+            },
+            {
+              type: "polygon",
+              class_id: 1,
+              points: [{ x: 0.55, y: 0.55 }, { x: 0.8, y: 0.55 }, { x: 0.68, y: 0.8 }],
+            },
+          ],
+        },
+      },
+    });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: /Visibility Project/ }).click();
+  await page.locator(".workspace-tabs button").nth(3).click();
+  await expect(page.getByTestId("annotation-instance-0")).toBeVisible();
+  await expect(page.getByTestId("annotation-instance-1")).toBeVisible();
+
+  await page.getByRole("button", { name: "隐藏实例 #1" }).click();
+  await expect(page.getByTestId("annotation-instance-0")).toBeHidden();
+  await expect(page.getByTestId("annotation-instance-1")).toBeVisible();
+
+  await page.getByRole("button", { name: "显示实例 #1" }).click();
+  await page.getByRole("button", { name: "隐藏标签 leaf" }).click();
+  await expect(page.getByTestId("annotation-instance-0")).toBeVisible();
+  await expect(page.getByTestId("annotation-instance-1")).toBeHidden();
+
+  await page.getByRole("button", { name: "显示标签 leaf" }).click();
+  await expect(page.getByTestId("annotation-instance-1")).toBeVisible();
+
+  await page.getByRole("button", { name: /#2 多边形 · leaf/ }).click();
+  await page.getByRole("button", { name: "删除实例 #2" }).click();
+  await expect(page.getByTestId("annotation-instance-1")).toBeHidden();
+  await page.keyboard.press("Control+S");
+
+  await expect.poll(() => savedAnnotation).not.toBeNull();
+  expect(savedAnnotation.instances).toHaveLength(1);
+  expect(savedAnnotation.instances[0].class_id).toBe(0);
 });
