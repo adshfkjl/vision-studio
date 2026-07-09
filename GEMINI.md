@@ -1,4 +1,4 @@
-# Agent Entry
+# Gemini Entry
 
 Read `PROJECT_HARNESS.md` first.
 Read `harness-contract.json` for durable defaults.

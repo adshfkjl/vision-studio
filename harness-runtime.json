@@ -1,0 +1,97 @@
+{
+  "harness_version": 2,
+  "_file_role": "volatile_runtime_state",
+  "_gitignore_note": "This file is runtime-only. Add harness-runtime.json to .gitignore in shared repositories.",
+  "_volatile_fields": [
+    "run_mode",
+    "bootstrap_status",
+    "interview_step",
+    "pending_fields",
+    "confirmed_fields",
+    "validated_shared_fields",
+    "drift_reasons",
+    "sync_status",
+    "entry_files_sync",
+    "last_audit_at",
+    "last_validated_at",
+    "language_detection"
+  ],
+  "run_mode": "bootstrap",
+  "bootstrap_status": "configured",
+  "interview_step": "complete",
+  "pending_fields": [],
+  "confirmed_fields": [
+    "communication_language",
+    "project_type",
+    "definition_of_done",
+    "change_posture",
+    "change_guardrails",
+    "verification_policy",
+    "approval_policy",
+    "project_commands",
+    "project_constraints",
+    "rule_strengths",
+    "communication_tone",
+    "stack_summary",
+    "environment"
+  ],
+  "validated_shared_fields": [
+    "communication_language",
+    "project_type",
+    "definition_of_done",
+    "change_posture",
+    "change_guardrails",
+    "verification_policy",
+    "approval_policy",
+    "project_commands",
+    "project_constraints",
+    "rule_strengths",
+    "communication_tone",
+    "stack_summary",
+    "environment"
+  ],
+  "drift_reasons": [],
+  "sync_status": "healthy",
+  "entry_files_sync": {
+    "status": "healthy",
+    "entry_files": [
+      "AGENTS.md",
+      "CLAUDE.md",
+      "GEMINI.md"
+    ],
+    "required_shared_fields": [
+      "communication_language",
+      "project_type",
+      "definition_of_done",
+      "change_posture",
+      "change_guardrails",
+      "verification_policy",
+      "approval_policy",
+      "project_commands",
+      "project_constraints",
+      "rule_strengths",
+      "communication_tone",
+      "stack_summary",
+      "environment"
+    ],
+    "last_checked_at": "2026-07-09T05:20:43+00:00",
+    "notes": [
+      "Entry files generated as thin projections from harness-contract.json and harness-runtime.json."
+    ]
+  },
+  "language_detection": {
+    "strategy": "detect_first_then_confirm",
+    "repo_signal": "Chinese user request and existing mixed Chinese/English project docs",
+    "confidence": "high"
+  },
+  "managed_files": [
+    "AGENTS.md",
+    "CLAUDE.md",
+    "GEMINI.md",
+    "PROJECT_HARNESS.md",
+    "harness-contract.json",
+    "harness-runtime.json"
+  ],
+  "last_audit_at": "2026-07-09T05:20:43+00:00",
+  "last_validated_at": "2026-07-09T05:20:43+00:00"
+}

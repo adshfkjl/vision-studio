@@ -95,10 +95,14 @@ add("project-center branch rules", fileExists("branch-rules/project-center.md"),
 add("model-workbench branch rules", fileExists("branch-rules/model-workbench.md"), "Model-workbench branch rule is missing.");
 
 const claude = fileExists("CLAUDE.md") ? readFileSync(join(projectRoot, "CLAUDE.md"), "utf-8") : "";
+const projectHarness = fileExists("PROJECT_HARNESS.md")
+  ? readFileSync(join(projectRoot, "PROJECT_HARNESS.md"), "utf-8")
+  : "";
+const harnessRuleText = `${claude}\n${projectHarness}`;
 add("CLAUDE.md initialized", claude.length > 0 && !claude.includes("【待填写"), "CLAUDE.md still contains template placeholders.");
-add("CLAUDE.md points to branch rules", claude.includes("branch-rules"), "CLAUDE.md should point agents to branch-rules/.");
-add("CLAUDE.md contains Surgical Changes", claude.includes("Surgical Changes"), "Add the Surgical Changes behavior rule.");
-add("CLAUDE.md contains Goal-Driven Execution", claude.includes("Goal-Driven Execution"), "Add the Goal-Driven Execution behavior rule.");
+add("Harness points to branch rules", harnessRuleText.includes("branch-rules"), "CLAUDE.md or PROJECT_HARNESS.md should point agents to branch-rules/.");
+add("Harness contains Surgical Changes", harnessRuleText.includes("Surgical Changes"), "Add the Surgical Changes behavior rule.");
+add("Harness contains Goal-Driven Execution", harnessRuleText.includes("Goal-Driven Execution"), "Add the Goal-Driven Execution behavior rule.");
 
 const settings = readJson(".claude/settings.json");
 if (settings) {
