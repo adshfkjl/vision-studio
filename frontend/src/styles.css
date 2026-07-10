@@ -500,30 +500,38 @@ label {
   font-size: 12px;
 }
 
-.image-list {
+.image-list-panel {
+  display: flex;
+  flex-direction: column;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
 }
 
-.image-list button {
+.image-list-items {
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.image-list-items button {
   width: 100%;
   justify-content: space-between;
   margin-bottom: 6px;
   overflow: hidden;
 }
 
-.image-list button span {
+.image-list-items button span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.image-list button.selected {
+.image-list-items button.selected {
   border-color: #0f766e;
   background: #edf7f5;
 }
 
-.image-list b {
+.image-list-items b {
   color: #0f766e;
   font-size: 11px;
   flex-shrink: 0;

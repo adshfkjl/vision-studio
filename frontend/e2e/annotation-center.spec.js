@@ -373,3 +373,73 @@ test("instance panel scrolls to later instances instead of clipping after the fi
   });
   await expect(page.getByRole("button", { name: /#12 多边形/ })).toBeVisible();
 });
+
+test("detect annotation image list scrolls to later images", async ({ page }) => {
+  const images = Array.from({ length: 18 }, (_, idx) => ({
+    name: `image-${String(idx + 1).padStart(2, "0")}.jpg`,
+    width: 100,
+    height: 100,
+    annotated: false,
+  }));
+
+  await page.route(/\/api\/tasks$/, async (route) => {
+    await route.fulfill({
+      json: [
+        { task_type: "detect", display_name: "Detection", station_annotation: true, default_model: "yolov8n.pt" },
+      ],
+    });
+  });
+  await page.route(/\/api\/projects$/, async (route) => {
+    await route.fulfill({
+      json: [
+        {
+          id: "detect-scroll-project",
+          name: "Detect Scroll Project",
+          task_type: "detect",
+          schema: { task_type: "detect" },
+          images,
+        },
+      ],
+    });
+  });
+  await page.route(/\/api\/projects\/detect-scroll-project\/images(?:\?.*)?$/, async (route) => {
+    await route.fulfill({ json: { total: images.length, items: images } });
+  });
+  await page.route(/\/api\/projects\/detect-scroll-project\/schema$/, async (route) => {
+    await route.fulfill({
+      json: {
+        task_type: "detect",
+        classes: [{ id: 0, name: "object", color: "#0f766e" }],
+        keypoints: [],
+        skeleton: [],
+        flip_idx: [],
+      },
+    });
+  });
+  await page.route(/\/api\/projects\/detect-scroll-project\/validation$/, async (route) => {
+    await route.fulfill({ json: { status: "ok", summary: {}, issues: [] } });
+  });
+  await page.route(/\/api\/projects\/detect-scroll-project\/annotations\/.*$/, async (route) => {
+    await route.fulfill({
+      json: {
+        image: "image.jpg",
+        width: 100,
+        height: 100,
+        annotation: { version: 1, instances: [] },
+      },
+    });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: /Detect Scroll Project/ }).click();
+  await page.locator(".workspace-tabs button").nth(3).click();
+
+  const imageList = page.locator(".image-list-items");
+  await expect.poll(() => imageList.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  await imageList.evaluate((el) => {
+    el.scrollTop = el.scrollHeight;
+  });
+  await expect(page.getByRole("button", { name: /image-18\.jpg/ })).toBeVisible();
+  await page.getByRole("button", { name: /image-18\.jpg/ }).click();
+  await expect(page.getByRole("button", { name: /image-18\.jpg/ })).toHaveClass(/selected/);
+});

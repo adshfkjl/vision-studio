@@ -1621,14 +1621,16 @@ function AnnotatePage(props) {
 
   return (
     <div className="annotation-page">
-      <aside className="panel image-list">
+      <aside className="panel image-list-panel">
         <h2><ImageIcon size={16} />图片</h2>
-        {images.map((img) => (
-          <button key={img.name} className={img.name === selectedImageName ? "selected" : ""} onClick={() => setSelectedImageName(img.name)} title={img.name}>
-            <span>{img.name}</span>
-            <b className={`status-badge ${imageStatus(validation, img)}`}>{statusLabel(imageStatus(validation, img))}</b>
-          </button>
-        ))}
+        <div className="image-list-items">
+          {images.map((img) => (
+            <button key={img.name} className={img.name === selectedImageName ? "selected" : ""} onClick={() => setSelectedImageName(img.name)} title={img.name}>
+              <span>{img.name}</span>
+              <b className={`status-badge ${imageStatus(validation, img)}`}>{statusLabel(imageStatus(validation, img))}</b>
+            </button>
+          ))}
+        </div>
       </aside>
       <section className="workspace">
         <div className="toolbar">
